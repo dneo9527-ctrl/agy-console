@@ -1,0 +1,22 @@
+[
+  {
+    "name": "CPython",
+    "version": "3.13.17",
+    "url": "https://www.python.org/ftp/python/3.13.17/python-3.13.17-embed-amd64.zip",
+    "sha256": "9e35319bffedab8b36ad44d8f377cb4f1733bcec257a0b6d04d94f01486ddb38"
+  },
+  {
+    "name": "pywinpty",
+    "version": "3.1.2",
+    "url": "https://files.pythonhosted.org/packages/44/45/d6fbce17940d8ed00d59d5fb5add752996a17e8018914f69fffc8a23209b/pywinpty-3.1.2-cp313-cp313-win_amd64.whl",
+    "sha256": "d968dc4300b497f048318387781ed9931dc0038815f25b4f642a1749448769cb",
+    "filename": "pywinpty-3.1.2-cp313-cp313-win_amd64.whl"
+  },
+  {
+    "name": "psutil",
+    "version": "7.2.2",
+    "url": "https://files.pythonhosted.org/packages/b4/90/e2159492b5426be0c1fef7acba807a03511f97c5f86b3caeda6ad92351a7/psutil-7.2.2-cp37-abi3-win_amd64.whl",
+    "sha256": "eb7e81434c8d223ec4a219b5fc1c47d0417b12be7ea866e24fb5ad6e84b3d988",
+    "filename": "psutil-7.2.2-cp37-abi3-win_amd64.whl"
+  }
+]

@@ -1,0 +1,11 @@
+在 Windows Codex 中打开本解压目录后，可使用下面的接入说明：
+
+请检查当前 Agy Console 便携包 README、runtime/python.exe、app/bridge.py、launcher.py 与官方 agy.exe。先执行 Diagnose.cmd 与 Self-Test.cmd；不要读取认证文件，不调用模型。缺少官方登录时由我在官方界面完成。
+
+服务用 Start-Agy.cmd 前台运行，关闭窗口结束自有进程。使用本包 runtime/python.exe 调用 app/bridge.py --ensure，以环境 CODEX_THREAD_ID 绑定真实当前聊天。没有ID时通过受支持的聊天工具确认，不按标题或最近会话猜测。
+
+按本聊天协作偏好派发有边界的相关任务，使用 bridge.py --task-file 与新的 --out 目录；不写 --model 时沿用窗口选择。只传相关材料，尊重协作和自动打开开关，复用本聊天固定URL，不每次新建官方会话。不得绕过登录、权限或额度，不购买额度。
+
+任务结果需要 completed、有回复且会话ID一致，你独立核验后记录采纳/驳回/暂缓。不要把已提交当已完成。更新默认不自动下载，只在空闲时暂存，下次前台启动应用；不要覆盖 data 或官方 CLI 状态。
+
+若我明确要求进行真实连通验收，再发送一条简短任务并续聊，检查真实回复与会话一致；不能用本地自检冒称真实模型已接通。

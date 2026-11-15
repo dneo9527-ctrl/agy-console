@@ -1,0 +1,62 @@
+{
+  "version": "0.1.0-preview.3",
+  "stage": "local_release_candidate_evidence",
+  "repository": "dneo9527-ctrl/agy-console",
+  "remote_actions_performed": false,
+  "developer_source_files_verified": 131,
+  "developer_original_assets_verified": 9,
+  "source_tests": {
+    "status": "passed",
+    "python": 235,
+    "javascript_suites": 30,
+    "isolation": "Deployment repository blanked in disposable copy; program bytes unchanged"
+  },
+  "framework_tests": {
+    "passed": 7
+  },
+  "windows_portable_on_mac": {
+    "passed": 2,
+    "native_skipped": 3
+  },
+  "program_packages": [
+    {
+      "target": "macos-arm64",
+      "status": "client_verify_stage_passed",
+      "files": 25
+    },
+    {
+      "target": "macos-x64",
+      "status": "client_verify_stage_passed",
+      "files": 25
+    },
+    {
+      "target": "linux-arm64",
+      "status": "client_verify_stage_passed",
+      "files": 25
+    },
+    {
+      "target": "linux-x64",
+      "status": "client_verify_stage_passed",
+      "files": 25
+    },
+    {
+      "target": "windows-x64",
+      "status": "client_verify_stage_passed",
+      "files": 26
+    }
+  ],
+  "actions_yaml": "syntax_passed_not_executed_remotely",
+  "pending": [
+    "Exact-SHA remote CI",
+    "Release publication and public redownload",
+    "Public updater networking verification"
+  ],
+  "native_limits": [
+    "Windows user login/model not tested",
+    "Linux user installation not tested",
+    "Developer ID/notarization/fresh download first-open not tested"
+  ],
+  "visibility": "public",
+  "license": "MIT",
+  "owner_decision": "Explicit public + MIT selection, 2026-11-15"
+}

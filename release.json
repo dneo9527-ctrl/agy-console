@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "product": "Agy Console",
+  "status": "ready",
+  "version": "0.1.0-preview.3",
+  "repository": "dneo9527-ctrl/agy-console",
+  "visibility": "public",
+  "license": "MIT",
+  "authorization_reference": "Owner explicitly selected public + MIT in publishing chat on 2026-11-15",
+  "source_frozen": true,
+  "source_manifest_sha256": "6f69986fbdb7ed558102b455e92de5fbd3063b3ea60b5a57b7687ce4797d3ba9",
+  "channel": "preview",
+  "platforms": [
+    "macos-source",
+    "linux-source",
+    "windows-x64"
+  ],
+  "platform_verification": {
+    "macos-source": "macOS_arm64_tests_passed",
+    "windows-x64": "native_not_run",
+    "linux-source": "native_not_run"
+  },
+  "updater_contract": "agreed",
+  "publish_authorized": true
+}

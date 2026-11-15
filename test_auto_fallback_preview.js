@@ -1,0 +1,21 @@
+// The composer consumes the worker's forecast, never posts a new choice to "auto" switch.
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const src=fs.readFileSync(__dirname+'/app.js','utf8'),part=(a,b)=>src.slice(src.indexOf(a),src.indexOf(b,src.indexOf(a)));
+const argon='gemini-4-argon-high',flash='gemini-3.8-flash-low',sonnet='claude-sonnet-5-5-medium';
+const health={models:[{id:argon,label:'Argon (High)'},{id:flash,label:'Flash (Low)'},{id:sonnet,label:'Sonnet (Medium)'}],account:{state:'known',quota:{'gemini-5h':{remaining_fraction:.8},'gemini-weekly':{remaining_fraction:.9},'gemini-argon-wtu-weekly':{remaining_fraction:0},'3p-5h':{remaining_fraction:.6},'3p-weekly':{remaining_fraction:.5}}}};
+const conv={model_preferences:{text:argon,image:argon},model_resolution:{text:{requested_model:argon,effective_model:sonnet,automatic:true,fallback_enabled:true},image:{requested_model:argon,effective_model:flash,automatic:true,fallback_enabled:true}}};
+const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',dataset:{},classList:{toggle(){}},setAttribute(){},removeAttribute(){}});return nodes.get(id);};
+node('model').value=argon;node('task-kind').value='text';
+const ctx={snapshot:{health,service:{features:{model_resolution:true,window_models:true}},preferred_model:argon},$:node,composerConversation:()=>conv,localStorage:{getItem(){return null;}},busy:false,submitting:false,modelSaving:false,uiSettings:{modelOrder:[]}};
+vm.createContext(ctx);vm.runInContext(part('function quotaGroupsForModel','function closeSelectMenu'),ctx);
+node('model-family-value').textContent='Argon';node('model-speed-value').textContent='High';ctx.renderModelQuota(health);
+assert.equal(ctx.effectiveComposerModel(health),sonnet);assert.equal(node('model-quota-alternative').hidden,true);
+assert.match(node('model-quota-text').textContent,/将按排序自动使用 Sonnet/);assert.equal(node('model-family-value').textContent,'Argon','button stays aligned with the saved menu choice');
+assert.equal(node('model').value,argon,'forecast must not replace the stored choice');
+node('task-kind').value='image';ctx.renderModelQuota(health);assert.equal(ctx.effectiveComposerModel(health),flash);assert.equal(node('model-speed-value').textContent,'High');
+assert.match(node('quota-ring').dataset.tooltip,/共享/);
+conv.model_resolution.image={requested_model:argon,effective_model:'',automatic:false,fallback_enabled:true,error:'生图候补暂无可用额度'};ctx.renderModelQuota(health);
+assert.equal(node('model-quota-text').textContent,'生图候补暂无可用额度');assert.equal(node('model-quota-alternative').hidden,true,'cannot suggest an unselected text model for images');
+conv.model_resolution.image={requested_model:argon,effective_model:argon,automatic:false,fallback_enabled:false};ctx.renderModelQuota(health);assert.match(node('model-quota-text').textContent,/自动候补已关闭/);
+assert.equal(ctx.quotaForModel(argon,{...health,account:{...health.account,quota:{...health.account.quota,'gemini-argon-wtu-weekly':{remaining_fraction:0,reset_time:'2000-01-01T00:00:00Z'}}}}).exhausted,false,'old zero after reset is unknown');
+console.log('Auto fallback preview passed: ordered automatic forecast, independent image allowlist, disabled state, original preference retained, expired quota ignored.');

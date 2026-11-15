@@ -1,0 +1,24 @@
+const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
+const source=fs.readFileSync(__dirname+'/app.js','utf8'),between=(a,b)=>source.slice(source.indexOf(a),source.indexOf(b,source.indexOf(a)));
+const node={textContent:'',dataset:{},classList:{toggle(){}}};let calls=0,resolve;
+const ctx={liveMemoryLastGood:null,liveMemoryError:'',liveMemoryPending:false,resourcePending:false,online:true,document:{hidden:false},snapshot:{service:{features:{resource_summary:true}}},
+  $:()=>node,quickTooltipTarget:null,accountCheckedLabel:String,paintQuickTooltip(){},api:()=>{calls++;return new Promise(r=>resolve=r);},readResources(){throw Error('live path must not run physical-memory checks');}};
+vm.createContext(ctx);vm.runInContext(between('function resourceMemoryValue','function positionResources'),ctx);
+(async()=>{
+  ctx.paintMemorySummary();assert.equal(node.textContent,'内存 —');
+  const pending=ctx.readMemorySummary();await ctx.readMemorySummary();assert.equal(calls,1);
+  resolve({rss_total_mb:1600,checked_at:'now'});await pending;assert.equal(node.textContent,'内存 1.60 GB');
+  ctx.api=async()=>{throw Error('offline');};await ctx.readMemorySummary();assert.equal(node.textContent,'内存 1.60 GB · 待更新');
+  ctx.rememberMemorySample({rss_total_mb:null,warning:'unavailable'});ctx.paintMemorySummary();assert.equal(ctx.liveMemoryLastGood.total,1600);
+  ctx.rememberMemorySample({processes:[{rss_mb:10},{rss_mb:20}],omitted:2});ctx.paintMemorySummary();assert.equal(node.textContent,'内存 ≥ 30.0 MB');
+  assert.match(node.dataset.tooltip,/不含浏览器/);assert.match(node.dataset.tooltip,/已列进程/);
+  ctx.document.hidden=true;ctx.api=()=>{throw Error('hidden page must not sample');};await ctx.readMemorySummary();assert.equal(ctx.liveMemoryPending,false);
+  ctx.document.hidden=false;ctx.snapshot.service=undefined;await ctx.readMemorySummary();
+  ctx.snapshot.service={features:{resources:true}};await ctx.readMemorySummary();assert.equal(ctx.liveMemoryLastGood.total,30,'old servers never trigger repeated heavy fallback sampling');
+  assert.equal(ctx.resourceMemoryValue({processes:[{rss_mb:NaN}]}),null);
+  assert.equal(ctx.resourceMemoryValue({rss_total_mb:-1}),null);
+  ctx.snapshot.queue={running:[{title:'论文写作',session_title:'原会话'}],queued:[{title:'图标创作',session_title:'生图'}]};
+  assert.match(ctx.queueStatusTooltip(),/论文写作/);assert.match(ctx.queueStatusTooltip(),/图标创作 · 生图/);
+  ctx.online=false;assert.match(ctx.queueStatusTooltip(),/状态尚未确认/);
+  console.log('Live memory checks passed: lightweight single flight, hidden pause, honest unknown, last-good retention, units and partial totals, queued window names.');
+})().catch(e=>{console.error(e);process.exit(1);});

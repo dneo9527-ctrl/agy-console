@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const source=fs.readFileSync(__dirname+'/app.js','utf8');
+const start=source.indexOf('const expandedTaskProgress='),end=source.indexOf('function panelAssistantHTML',start);
+const ctx={escape:value=>String(value).replaceAll('<','&lt;').replaceAll('"','&quot;'),texts:{running:'执行中',completed:'已完成'},timeLabel:x=>x,isBusy:status=>status==='running'};
+vm.createContext(ctx);vm.runInContext(source.slice(start,end),ctx);
+const turn={id:'one',status:'running',progress_updated_at:'known-time',progress:[{label:'读取 <file>',state:'active',updated_at:'known-time'}],progress_omitted:3};
+let html=ctx.taskProgressHTML(turn);assert.ok(!html.includes(' open>'));assert.match(html,/&lt;file>/);assert.match(html,/known-time 更新/);assert.match(html,/省略 3 条/);
+ctx.rememberProgressExpansion('one',true);turn.progress.push({label:'返回结果',state:'done'});html=ctx.taskProgressHTML(turn);assert.match(html,/ open>/,'stream updates retain expansion');
+assert.ok(!ctx.taskProgressHTML({...turn,id:'two'}).includes(' open>'),'another turn is independent');
+turn.status='completed';assert.match(ctx.taskProgressHTML(turn),/ open>/,'completion retains expansion');
+ctx.rememberProgressExpansion('one',false);assert.ok(!ctx.taskProgressHTML(turn).includes(' open>'));
+html=ctx.taskProgressHTML({id:'old',status:'completed',events:['旧事件']});assert.match(html,/旧记录没有步骤时间/);assert.ok(!html.includes('更新'));
+assert.equal(ctx.taskProgressHTML({id:'empty',status:'completed'}),'');
+for(let i=0;i<150;i++)ctx.rememberProgressExpansion('turn-'+i,true);assert.ok(!ctx.taskProgressHTML(turn).includes(' open>'),'old expansion state is bounded');
+console.log('Task progress UI passed: collapsed by default, per-turn expansion retained, bounded state, escaped labels and honest legacy timestamps.');

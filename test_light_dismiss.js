@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const source=fs.readFileSync(__dirname+'/app.js','utf8'),events={};let closed=0;
+const dialog={getBoundingClientRect:()=>({left:20,top:20,right:200,bottom:200}),addEventListener:(name,fn)=>events[name]=fn,close(){closed++;events.close();}};
+const ctx={};vm.createContext(ctx);vm.runInContext(source.slice(source.indexOf('function installLightDismiss'),source.indexOf('function hideQuickTooltip')),ctx);ctx.installLightDismiss(dialog);
+const fire=(name,x,y,target=dialog,button=0)=>events[name]({target,button,clientX:x,clientY:y});
+fire('pointerdown',5,5);fire('pointerup',5,5);assert.equal(closed,1);
+fire('pointerdown',60,60);fire('pointerup',60,60);assert.equal(closed,1);
+fire('pointerdown',60,60,{});fire('pointerup',5,5);assert.equal(closed,1);
+fire('pointerdown',5,5);fire('pointerup',60,60);assert.equal(closed,1);
+fire('pointerdown',5,5,dialog,2);fire('pointerup',5,5,dialog,2);assert.equal(closed,1);
+fire('pointerdown',5,5);events.pointercancel();fire('pointerup',5,5);assert.equal(closed,1);
+console.log('Light-dismiss checks passed: outside tap closes, inside controls and padding stay open, dragging out and pointer cancellation never dismiss.');
