@@ -1,8 +1,8 @@
-# Agy Console v0.1.0-preview.3 发布方案
+# Agy Console v0.1.0-preview.4 发布方案
 
 目标仓库：`dneo9527-ctrl/agy-console`。所有者已明确授权公开＋MIT。
 
-标签 `v0.1.0-preview.3`，标记 prerelease，不设为稳定最新版。
+标签 `v0.1.0-preview.4`，标记 prerelease，不设为稳定最新版。
 
 交付：Mac/Linux 需 Python 的源码预览包、Windows x64 含运行时便携预览包、五个平台程序更新 ZIP、聚合 updates.json 和 SHA256SUMS。完整包内置明确的公开仓库与 preview 通道，自动下载默认关闭。
 

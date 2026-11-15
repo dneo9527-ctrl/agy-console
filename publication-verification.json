@@ -1,6 +1,6 @@
 {
-  "version": "0.1.0-preview.3",
-  "stage": "local_release_candidate_evidence",
+  "version": "0.1.0-preview.4",
+  "stage": "local_frontend_patch_under_revalidation",
   "repository": "dneo9527-ctrl/agy-console",
   "remote_actions_performed": false,
   "developer_source_files_verified": 131,
@@ -58,5 +58,47 @@
   ],
   "visibility": "public",
   "license": "MIT",
-  "owner_decision": "Explicit public + MIT selection, 2026-11-15"
+  "owner_decision": "Explicit public + MIT selection, 2026-11-15",
+  "new_frontend_handoff": {
+    "version": "0.1.0-preview.4",
+    "js_suites_passed": 30,
+    "live": {
+      "version": "0.1.0-preview.4",
+      "pid": 81337,
+      "instance_id": "a2f675febf397c9e",
+      "same_foreground_pid": true,
+      "browser": {
+        "queue_footer": "single control; actual1running0queued then idle seen; opens real queue",
+        "root_fallback": "configuration expands with empty explicit scope, selected current chat renders saved choices",
+        "image_text_independent": "switched selectors and confirmed distinct values, no save made",
+        "fixed_fallback": "expands directly, scope selector hidden"
+      },
+      "preferences_modified": false,
+      "python_backend": "unchanged from.3; no repeat tests",
+      "remote_CI": "not executed by this chat; known earlier Mac3.13 CI failure remains publishing responsibility"
+    },
+    "source_manifest_sha256": "c59a52df218ad5aa7021559b2bff718bacde17f1a68db526ec89322216737608",
+    "files_changed_from_3": [
+      "CHANGELOG.md",
+      "README.md",
+      "VERSION",
+      "app.js",
+      "index.html",
+      "style.css",
+      "test_candidate_priority.js",
+      "test_live_memory.js",
+      "test_quota_settings.js",
+      "windows/CHANGELOG.md",
+      "windows/README.md",
+      "windows/app/VERSION",
+      "windows/app/app.js",
+      "windows/app/index.html",
+      "windows/app/style.css"
+    ],
+    "artifact_count": 9,
+    "artifacts": "ZIP CRC and per-file hashes passed",
+    "backend_tests": "not rerun; no Python backend changes",
+    "remote_ci": "not rerun here; earlier Mac3.13 failure pending publishing task",
+    "Agy_review_recorded": true
+  }
 }

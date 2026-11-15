@@ -3,7 +3,7 @@ const src=fs.readFileSync(__dirname+'/app.js','utf8'),part=(a,b)=>src.slice(src.
 const chats={a:{id:'a',fallback_preferences:{text:{enabled:true,models:['sonnet-low','flash-high','argon-high']},image:{enabled:true,models:['argon-high']}}},b:{id:'b',fallback_preferences:{}}};
 let owner=chats.a,resolve,calls=[];const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{value:'text',dataset:{},setAttribute(){}});return nodes.get(id);};
 const models=['argon-high','flash-high','flash-low','sonnet-low'].map(id=>({id,label:id}));
-const ctx={snapshot:{health:{models}},uiSettings:{modelOrder:[]},settingsOwner:()=>owner,conversationMeta:id=>chats[id],conversationPages:new Map(),pageCacheKey:id=>id,$:node,render(){},toast(){},localStorage:{getItem(){return null;}},api:(path,body)=>{calls.push({path,body});return new Promise(r=>resolve=r);}};
+const ctx={online:true,snapshot:{service:{features:{quota_failover:true}},health:{models}},uiSettings:{modelOrder:[]},settingsOwner:()=>owner,conversationMeta:id=>chats[id],conversationPages:new Map(),pageCacheKey:id=>id,$:node,render(){},toast(){},localStorage:{getItem(){return null;}},api:(path,body)=>{calls.push({path,body});return new Promise(r=>resolve=r);}};
 vm.createContext(ctx);vm.runInContext(part('function orderedModels','function renderModelSelection'),ctx);vm.runInContext(part('let fallbackExpanded','function installLightDismiss'),ctx);
 (async()=>{
  let settings=chats.a.fallback_preferences.text;

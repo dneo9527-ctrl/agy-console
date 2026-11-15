@@ -142,9 +142,9 @@ function moveModelOrder(id,direction){
   [groups[index],groups[target]]=[groups[target],groups[index]];const ids=groups.flatMap(g=>g.variants.map(m=>m.id)),known=new Set(ids),scroll=$('settings-model-order-list').scrollTop;
   saveModelOrder([...ids,...uiSettings.modelOrder.filter(key=>!known.has(key))]);$('settings-model-order-list').scrollTop=scroll;
 }
-let fallbackExpanded=false,fallbackSaving=false;
+let fallbackExpanded=false,fallbackSaving=false,fallbackScopeId='';
 function fallbackView(){
-  const owner=settingsOwner(),kind=$('fallback-kind').value==='image'?'image':'text';
+  const owner=settingsOwner()||conversationMeta(fallbackScopeId),kind=$('fallback-kind').value==='image'?'image':'text';
   return {owner,kind,settings:owner?.fallback_preferences?.[kind]||{enabled:true}};
 }
 function fallbackCandidates(owner,kind,settings){
@@ -171,12 +171,19 @@ function moveFallbackModel(family,direction){
 function renderFallbackSettings(){
   const panel=$('fallback-panel');if(!panel)return;
   const {owner,kind,settings}=fallbackView(),supported=snapshot.service?.features?.quota_failover===true;
-  $('fallback-expand').disabled=!owner||!supported||!online;
+  const fixed=settingsOwner(),scope=$('fallback-scope');
+  $('fallback-expand').disabled=false;
+  $('fallback-scope-row').hidden=!!fixed;
+  const options='<option value="">选择要配置的聊天</option>'+(snapshot.conversations||[]).filter(c=>!c.deleted_at).map(c=>'<option value="'+escape(c.id)+'">'+escape(c.title||'未命名聊天')+'</option>').join('');
+  if(scope.innerHTML!==options)scope.innerHTML=options;scope.value=fixed?.id||owner?.id||'';scope.disabled=fallbackSaving;
   panel.hidden=!fallbackExpanded;$('fallback-expand').setAttribute('aria-expanded',String(fallbackExpanded));
-  $('fallback-summary').textContent=!supported?'加载新版后台后可用':(settings.enabled?'已开启':'已关闭')+' · '+(kind==='text'?'文字':'生图')+' · '+(Array.isArray(settings.models)?'自选候补':'默认候补');
-  if(!fallbackExpanded||!supported)return;
-  const button=$('fallback-enabled');button.disabled=!owner||fallbackSaving;button.setAttribute('aria-checked',String(settings.enabled));button.textContent=fallbackSaving?'保存中…':settings.enabled?'开':'关';
-  $('fallback-kind').disabled=fallbackSaving;$('fallback-reset').disabled=fallbackSaving;
+  $('fallback-expand').textContent=fallbackExpanded?'收起':'配置';
+  $('fallback-summary').textContent=!supported?'加载新版后台后可用':!owner?'按聊天配置 · 文字与生图独立':(settings.enabled?'已开启':'已关闭')+' · '+(kind==='text'?'文字':'生图')+' · '+(Array.isArray(settings.models)?'自选候补':'默认候补');
+  if(!fallbackExpanded)return;
+  const editable=!!owner&&supported&&online&&!fallbackSaving;
+  const button=$('fallback-enabled');button.disabled=!editable;button.setAttribute('aria-checked',String(!!owner&&settings.enabled));button.textContent=fallbackSaving?'保存中…':!owner?'—':settings.enabled?'开':'关';
+  $('fallback-kind').disabled=fallbackSaving;$('fallback-reset').disabled=!editable;
+  if(!owner||!supported){$('fallback-note').textContent=!supported?'当前后台不支持保存候补，请加载新版后台。':'先选择聊天，再设置文字或生图候补。';$('fallback-models').innerHTML='';$('fallback-status').textContent='尚未修改任何配置';return;}
   const candidates=fallbackCandidates(owner,kind,settings),groups=fallbackModelGroups(owner,kind,settings);
   const count=groups.filter(g=>g.variants.some(m=>candidates.includes(m.id))).length;
   $('fallback-note').textContent=kind==='image'?'用 ↑↓ 调整生图候补顺序；仅勾选的模型参与，出图能力需确认。':'当前模型可用时继续使用；额度用完按编号接替。用 ↑↓ 调整顺序。';
@@ -184,14 +191,15 @@ function renderFallbackSettings(){
   const html=groups.map(g=>{
     const chosen=g.variants.find(m=>candidates.includes(m.id));
     const number=chosen?++candidateIndex:null;
-    return '<div class="fallback-model-row"><label><b class="order-number">'+(number||'—')+'</b><input type="checkbox" data-fallback-family="'+escape(g.key)+'" '+(chosen?'checked ':'')+(fallbackSaving?'disabled ':'')+'>'+escape(g.label)+'</label><select aria-label="'+escape(g.label)+' 候补档位" data-fallback-tier="'+escape(g.key)+'" '+(!chosen||fallbackSaving?'disabled':'')+'>'+g.variants.map(m=>'<option value="'+escape(m.id)+'"'+(m.id===chosen?.id?' selected':'')+'>'+escape(modelEffortLabels[m.effort]||'默认档位')+'</option>').join('')+'</select><div class="fallback-arrows"><button type="button" data-fallback-move="up" data-fallback-id="'+escape(g.key)+'" aria-label="上移 '+escape(g.label)+'" '+(!number||number===1||fallbackSaving?'disabled':'')+'>↑</button><button type="button" data-fallback-move="down" data-fallback-id="'+escape(g.key)+'" aria-label="下移 '+escape(g.label)+'" '+(!number||number===count||fallbackSaving?'disabled':'')+'>↓</button></div></div>';
+    return '<div class="fallback-model-row"><label><b class="order-number">'+(number||'—')+'</b><input type="checkbox" data-fallback-family="'+escape(g.key)+'" '+(chosen?'checked ':'')+(!editable?'disabled ':'')+'>'+escape(g.label)+'</label><select aria-label="'+escape(g.label)+' 候补档位" data-fallback-tier="'+escape(g.key)+'" '+(!chosen||!editable?'disabled':'')+'>'+g.variants.map(m=>'<option value="'+escape(m.id)+'"'+(m.id===chosen?.id?' selected':'')+'>'+escape(modelEffortLabels[m.effort]||'默认档位')+'</option>').join('')+'</select><div class="fallback-arrows"><button type="button" data-fallback-move="up" data-fallback-id="'+escape(g.key)+'" aria-label="上移 '+escape(g.label)+'" '+(!number||number===1||!editable?'disabled':'')+'>↑</button><button type="button" data-fallback-move="down" data-fallback-id="'+escape(g.key)+'" aria-label="下移 '+escape(g.label)+'" '+(!number||number===count||!editable?'disabled':'')+'>↓</button></div></div>';
   }).join('');
   if($('fallback-models').innerHTML!==html)$('fallback-models').innerHTML=html;
-  $('fallback-status').textContent=(fallbackSaving?'保存中…':candidateIndex+' 个候补 · '+(Array.isArray(settings.models)?'已保存顺序':'默认顺序'))+' · '+(kind==='text'?'文字':'生图');
+  $('fallback-status').textContent=(!online?'服务已断开 · 仅查看':fallbackSaving?'保存中…':candidateIndex+' 个候补 · '+(Array.isArray(settings.models)?'已保存顺序':'默认顺序'))+' · '+(kind==='text'?'文字':'生图');
 }
 async function saveFallbackSettings(value){
   if(fallbackSaving)return;
   const {owner,kind}=fallbackView();if(!owner)return;
+  if(!online||!snapshot.service?.features?.quota_failover)return;
   const cid=owner.id;fallbackSaving=true;renderFallbackSettings();
   try{const saved=await api('/api/conversations/'+cid+'/fallback',{kind,settings:value});
     if(saved.id!==cid)throw Error('窗口不匹配');
@@ -1061,7 +1069,10 @@ function renderActivity(){
 
 function renderQueue(){
   const supported=snapshot.service?.features?.queue_priority===true;
-  $('queue-toggle').disabled=!online||!supported;$('queue-toggle').dataset.tooltip=supported?'查看执行顺序、调整排队任务':'任务队列需要载入新版后台';
+  const button=$('queue-toggle'),counts=queueSummary();
+  button.disabled=reloadBusy||!online||!supported||snapshot.service?.stopping;
+  button.textContent=reloadBusy?'队列 · 重载中':!online?'队列 · 未连接':snapshot.service?.stopping?'队列 · 正在关闭':!supported?'队列 · 待更新':counts.running||counts.queued?`队列 · ${counts.running} 执行 · ${counts.queued} 排队`:'队列 · 待命';
+  button.dataset.tooltip=supported?queueStatusTooltip():'任务队列需要载入新版后台';
   if(!$('task-queue-dialog').open)return;
   const queue=snapshot.queue||{running:[],queued:[],version:''};
   $('task-queue-summary').textContent=`${queue.running.length} 项执行 · ${queue.queued.length} 项排队 · 同一会话保持先后`;
@@ -1187,10 +1198,7 @@ function render(){
   $('offline-banner').textContent=!online?'终端控制台已断开，任务状态尚未确认。请双击「启动控制台.command」，然后刷新此页面。':health.error||'请检查 Antigravity 的登录和网络，然后点击右上角重新连接。';
   if(online&&requestedCodexThread&&!boundViewApplied){$('offline-banner').hidden=false;$('offline-banner').textContent=snapshot.service?.features?.codex_binding?'这条 Codex 聊天尚未建立 Agy 绑定。请从对应 Codex 聊天派发第一项任务。':'固定会话功能已更新。请等当前任务完成后，关闭并重开控制台终端，再刷新此链接。';}
   if(reloadBusy){$('offline-banner').hidden=false;$('offline-banner').textContent='正在原终端加载更新，草稿和固定会话会恢复。';}
-  const activeTasks=snapshot.service?.active_tasks??snapshot.conversations.reduce((sum,c)=>sum+c.turns.filter(t=>isBusy(t.status)).length,0);
-  $('save-note').textContent=reloadBusy?'终端控制台正在重载':!online?'终端控制台：未连接':snapshot.service?.stopping?'终端控制台正在关闭':activeTasks?`终端控制台：${activeTasks} 项任务处理中`:'终端控制台：待命 · 无模型任务';
-  if(!reloadBusy&&online&&activeTasks&&!snapshot.service?.stopping){const count=queueSummary();$('save-note').textContent=`终端控制台：${count.running} 执行 · ${count.queued} 排队`;}
-  $('save-note').hidden=false;$('save-note').dataset.tooltip=queueStatusTooltip();paintMemorySummary();if(quickTooltipTarget&&!$('quick-tooltip').hidden)paintQuickTooltip();
+  paintMemorySummary();if(quickTooltipTarget&&!$('quick-tooltip').hidden)paintQuickTooltip();
   $('service-reload').disabled=reloadBusy||!online||!snapshot.service?.can_reload;
   $('service-reload').textContent=reloadBusy?'重载中…':'重载更新';
   $('service-reload').dataset.tooltip=snapshot.service?.features?.foreground_reload?'空闲时在原终端加载更新，关闭终端仍会全部退出':'首次载入重载功能需重开原前台终端';
@@ -1345,6 +1353,7 @@ async function saveGlobalModelChoice(){
 }
 $('fallback-expand').addEventListener('click',()=>{fallbackExpanded=!fallbackExpanded;renderFallbackSettings();});
 $('fallback-kind').addEventListener('change',renderFallbackSettings);
+$('fallback-scope').addEventListener('change',()=>{fallbackScopeId=$('fallback-scope').value;renderFallbackSettings();});
 $('fallback-enabled').addEventListener('click',()=>{const {settings}=fallbackView();saveFallbackSettings({...settings,enabled:!settings.enabled});});
 $('fallback-reset').addEventListener('click',()=>{const {settings}=fallbackView();saveFallbackSettings({enabled:settings.enabled});});
 $('fallback-models').addEventListener('click',event=>{const button=event.target.closest('[data-fallback-move]');if(button&&!button.disabled)moveFallbackModel(button.dataset.fallbackId,button.dataset.fallbackMove);});
@@ -1407,7 +1416,6 @@ $('turns-newer').addEventListener('click',()=>pageConversation('newer'));
 $('turns-latest').addEventListener('click',()=>pageConversation('latest'));
 $('detail-retry').addEventListener('click',()=>loadConversationPage(activeId,conversationPages.get(pageCacheKey(activeId))?.params||{},true));
 $('live-memory').addEventListener('click',()=>{resourceExpanded=!resourceExpanded;accountExpanded=false;renderAccount();paintResources();if(resourceExpanded){readResources();$('resource-refresh').focus();}});
-$('save-note').addEventListener('click',openQueue);
 $('resource-close').addEventListener('click',()=>closeResources(true));
 $('resource-refresh').addEventListener('click',()=>readResources(true));
 window.addEventListener('resize',positionResources);

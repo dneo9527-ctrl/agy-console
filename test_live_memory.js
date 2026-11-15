@@ -20,5 +20,13 @@ vm.createContext(ctx);vm.runInContext(between('function resourceMemoryValue','fu
   ctx.snapshot.queue={running:[{title:'论文写作',session_title:'原会话'}],queued:[{title:'图标创作',session_title:'生图'}]};
   assert.match(ctx.queueStatusTooltip(),/论文写作/);assert.match(ctx.queueStatusTooltip(),/图标创作 · 生图/);
   ctx.online=false;assert.match(ctx.queueStatusTooltip(),/状态尚未确认/);
+  const footerNodes=new Map(),footerNode=id=>{if(!footerNodes.has(id))footerNodes.set(id,{dataset:{},open:false});return footerNodes.get(id);};
+  const footer={snapshot:{service:{features:{queue_priority:true}},queue:{running:[],queued:[]},conversations:[]},online:true,reloadBusy:false,$:footerNode,queueStatusTooltip:()=> 'details'};
+  vm.createContext(footer);vm.runInContext(between('function queueSummary(','function panelUserHTML'),footer);vm.runInContext(between('function renderQueue(','async function openQueue'),footer);
+  footer.renderQueue();assert.equal(footerNode('queue-toggle').textContent,'队列 · 待命');
+  footer.snapshot.queue={running:[{id:'a'}],queued:[{id:'b'},{id:'c'}]};footer.renderQueue();assert.equal(footerNode('queue-toggle').textContent,'队列 · 1 执行 · 2 排队');
+  footer.online=false;footer.renderQueue();assert.equal(footerNode('queue-toggle').textContent,'队列 · 未连接');assert.equal(footerNode('queue-toggle').disabled,true);
+  footer.reloadBusy=true;footer.renderQueue();assert.equal(footerNode('queue-toggle').textContent,'队列 · 重载中');
+  assert.ok(!fs.readFileSync(__dirname+'/index.html','utf8').includes('id="save-note"'),'duplicate queue trigger removed');
   console.log('Live memory checks passed: lightweight single flight, hidden pause, honest unknown, last-good retention, units and partial totals, queued window names.');
 })().catch(e=>{console.error(e);process.exit(1);});

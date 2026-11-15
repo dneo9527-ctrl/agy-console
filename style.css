@@ -386,7 +386,7 @@
 .composer .model-control .select-trigger,.composer .task-kind-control .select-trigger{padding-block:3px}
 .composer-target{margin:0 3px 4px;line-height:1.3}
 .composer-caption{margin:2px 0 0;padding:0 3px;line-height:1.3}
-.composer-caption:has(#save-note[hidden]){display:none}
+
 .turns-paging{padding:3px 12px;gap:6px;backdrop-filter:none}
 .turns-paging button{padding:3px 7px;font-size:12px}
 .turns-paging button:disabled{display:none}
@@ -416,7 +416,7 @@
 .composer-caption{align-items:center;justify-content:flex-start;gap:8px;min-height:22px;font-size:12px}
 .composer-caption button{border:0;background:transparent;color:#b5bed0;border-radius:5px;padding:3px 4px;font:inherit;white-space:nowrap}
 .composer-caption button:hover{background:#30343f;color:#f0f2f8}
-#service-reload{margin-left:auto}#save-note{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#service-reload{margin-left:auto}#queue-toggle{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 #task-queue-list{padding:0 16px 14px}.queue-row{display:flex;align-items:flex-start;gap:10px;padding:14px 0;border-bottom:1px solid #354058}
 .queue-position{width:24px;flex-shrink:0;padding-top:3px;color:#aebbe0;text-align:center;font-size:13px}
 .queue-info{flex:1;min-width:0}.queue-info strong{display:block;font-size:13px;font-weight:550;overflow-wrap:anywhere}
@@ -481,12 +481,12 @@
 .model-order-row small{display:block;color:#9aa8bf;font-size:12px;margin-top:3px}
 .fallback-model-row{gap:6px}.fallback-model-row label{min-width:0}.fallback-arrows{display:flex;gap:3px;flex-shrink:0}
 .fallback-arrows button{min-width:25px;padding:3px 5px!important}.fallback-arrows button:disabled{opacity:.3}
-.composer-caption #save-note{min-width:0;overflow:hidden;text-overflow:ellipsis;text-align:left}
+.composer-caption #queue-toggle{min-width:0;overflow:hidden;text-overflow:ellipsis;text-align:left}
 .composer-caption #live-memory{margin-left:auto;flex:0 0 auto;color:#b7c6d5;font-variant-numeric:tabular-nums}
 .composer-caption #live-memory.is-stale{color:#b9a989}
 #quick-tooltip{position:fixed;inset:auto;margin:0;box-sizing:border-box;width:max-content;max-width:min(360px,calc(100vw - 24px));max-height:min(420px,calc(100dvh - 24px));padding:11px 14px;border:1px solid #454c5b;border-radius:12px;background:#272c36;color:#e0e5ee;box-shadow:0 8px 28px #0005;font:400 12px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;white-space:pre-line;overflow-wrap:anywhere;overflow:hidden;pointer-events:none;z-index:1000}
 #quick-tooltip::backdrop{background:transparent;pointer-events:none}
-@media(max-width:600px){.composer-controls{flex-wrap:nowrap}.composer-tools{flex:0 0 auto}.composer-right{max-width:100%}.composer .picker-model-family .select-trigger{max-width:150px}.composer .picker-model-speed .select-trigger{max-width:118px}.composer-caption #save-note{flex:1 1 130px;font-size:12px}.composer-caption #live-memory{font-size:12px}}
+@media(max-width:600px){.composer-controls{flex-wrap:nowrap}.composer-tools{flex:0 0 auto}.composer-right{max-width:100%}.composer .picker-model-family .select-trigger{max-width:150px}.composer .picker-model-speed .select-trigger{max-width:118px}.composer-caption #queue-toggle{flex:1 1 130px;font-size:12px}.composer-caption #live-memory{font-size:12px}}
 @media(max-width:380px){.composer .model-control .picker-model-family .select-trigger{max-width:125px}.composer .model-control .picker-model-speed .select-trigger{max-width:108px}.composer-caption{gap:3px}}
 
 /* Bounded progress stays quiet and collapsed until requested. */
@@ -533,3 +533,6 @@
 .config-actions{display:flex;gap:5px;flex-shrink:0}.settings-config-note{font-size:12px;color:#a6b2c7;padding:8px 0;margin:0;line-height:1.5}
 .config-import-body{padding:0 16px 14px;font-size:13px;line-height:1.65}.config-import-body p{white-space:pre-line}.config-import-body label{display:flex;align-items:flex-start;gap:7px}.config-import-body small{display:block;font-size:12px;color:#a4b2c9}.config-import-body input{margin-top:4px}
 @media(max-width:380px){.software-card-head{gap:6px;padding-inline:9px}.software-identity{gap:6px}.software-identity img{width:28px;height:28px}.software-card-head strong{font-size:13px}.config-actions{gap:3px}}
+
+.fallback-scope-row{display:flex;align-items:center;gap:8px;margin:2px 0 9px;color:#a9b6ca;font-size:12px}.fallback-scope-row select{flex:1;min-width:0;border:1px solid #46516a;border-radius:7px;background:#202532;color:#dfe6f4;font:inherit;padding:6px}
+.composer-caption #queue-toggle{flex:0 1 auto;max-width:calc(100% - 105px);width:auto;text-overflow:ellipsis}
