@@ -98,22 +98,32 @@ def run_owned(command, cwd):
 def main():
     for stream in (sys.stdout,sys.stderr):
         if hasattr(stream,'reconfigure'):stream.reconfigure(encoding='utf-8',errors='replace')
+    import argparse
+    from installation import ForegroundGuard, data_directory
     from windows_support import console_attached, find_agy
     if not console_attached():
         print('Please double-click Start-Agy.cmd in an interactive terminal.');return 2
+    parser=argparse.ArgumentParser(description='Agy Console Windows foreground launcher')
+    parser.add_argument('--login',action='store_true')
+    parser.add_argument('--data',help='Explicit data directory (no automatic migration)')
+    args,remaining=parser.parse_known_args()
     agy=find_agy()
     if not Path(agy).is_file():
-        print('Official agy.exe was not found.\nInstall from https://antigravity.google/download#antigravity-cli\nThen run Login-Agy.cmd once.\nCustom location: set AGY_BINARY to the full agy.exe path.')
+        print('Official agy.exe was not found.\nOpen Install-Official-CLI.url or Getting-Started.html.\nInstall from https://antigravity.google/download#antigravity-cli\nThen run Login-Agy.cmd once.\nCustom location: set AGY_BINARY to the full agy.exe path.')
         return 2
-    if '--login' in sys.argv:
-        return run_owned([agy],ROOT)
-    return run_owned([sys.executable,'-u',str(ROOT/'update_bootstrap.py'),'--app-root',str(ROOT/'app'),'--data',str(ROOT/'data'),
-                      '--agy-bin',agy]+sys.argv[1:],ROOT)
+    with ForegroundGuard():
+        if args.login:
+            return run_owned([agy],ROOT)
+        data=data_directory(ROOT,args.data)
+        print('Data directory:',data,flush=True)
+        print('Open Open-Panel.url after the service is ready. Keep this window open.',flush=True)
+        return run_owned([sys.executable,'-u',str(ROOT/'update_bootstrap.py'),'--app-root',str(ROOT/'app'),'--data',str(data),
+                          '--agy-bin',agy]+remaining,ROOT)
 
 
 if __name__=='__main__':
     try:
         raise SystemExit(main())
-    except OSError as error:
+    except (OSError,RuntimeError,ValueError) as error:
         print('Could not start safely:',error)
         raise SystemExit(1)

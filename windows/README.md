@@ -1,24 +1,31 @@
-# Agy 控制台 · Windows x64 便携版
+# Agy 控制台 · Windows x64
 
-版本：0.1.0-preview.6（2026-11-15）。适用于 Windows 10 1809 或更新版本、Windows 11，Intel/AMD 64 位。无需安装 Python，不需要管理员权限，不创建开机启动或后台服务。不适用于 32 位 Windows；本包未提供 ARM64 原生运行时。
+Windows 安装版版本：0.1.0-preview.7（2026-11-16）。Windows 10 1809+/11 x64 目标；含 Python 3.13.17、pywinpty、psutil，无需另外安装 Python。每用户免管理员安装，不创建后台服务或开机启动。本版不提供 32 位或 ARM64 原生运行时。
 
-## 开始使用
+## 下载与首次使用
 
-1. **先完整解压**到自己的可写目录，例如 `D:\Tools\AgyConsole`。不要直接在 ZIP 中启动，不要放在 Program Files。
-2. 首次使用先安装官方 Antigravity CLI。官方页面：<https://antigravity.google/download#antigravity-cli>。官网提供的 Windows PowerShell 命令为：
+- `AgyConsole-0.1.0-preview.7-windows-x64-setup.exe`：普通用户的安装向导；桌面和开始菜单入口，默认安装在 `%LOCALAPPDATA%\Programs\AgyConsole`。
+- `AgyConsole-0.1.0-preview.7-windows-x64-preview.zip`：完整便携版；完全解压到自己的可写目录，不从 ZIP 内运行。
+- `*-program.zip`：只供面板更新器使用，不会安装本向导、监管器或运行时；不能当首次安装包。
 
-   ```powershell
-   irm https://antigravity.google/cli/install.ps1 | iex
-   ```
+安装后阅读 **Getting Started**，开始菜单提供 **Official CLI Installation**、**Official CLI Login**、**Agy Console**、**Open Panel**。便携目录也有对应的 `Install-Official-CLI.url`、`Login-Agy.cmd`、`Start-Agy.cmd`、`Open-Panel.url`。
 
-   此命令只需在 Windows 端执行；本发行包不会自动下载、安装、运行该安装脚本。
-3. 双击 **Login-Agy.cmd**，在官方 CLI 的界面中完成一次登录。已有官方 CLI 登录可以跳过。这与 Codex 登录相互独立，每个聊天无须重新登录。此包不含 Mac 的凭据。
-4. 双击 **Start-Agy.cmd**，保持启动窗口打开。看到端口和就绪提示后，双击 **打开面板.url**，或访问 <http://127.0.0.1:8765/>。
-5. 在页面选择模型并发送任务。首次账号检查可能需要约 15 秒；没有取得额度时显示未知，不会当成额度为零。
+1. 先通过 [官方页面](https://antigravity.google/download#antigravity-cli) 安装 Antigravity CLI；本包不自动执行远程安装脚本，不重新分发官方 CLI。
+2. 双击 **Official CLI Login / Login-Agy.cmd**，在官方界面本人登录一次。已有官方登录可跳过；不含发布者 Mac 登录，不需每个聊天重新登录。
+3. 双击桌面 **Agy Console** 或 **Start-Agy.cmd**，保持启动窗口打开。服务就绪后使用 **Open Panel / Open-Panel.url** 打开 <http://127.0.0.1:8765/>。
+4. 关闭启动窗口或按 Ctrl+C，停止本工具拥有的服务和 CLI 子进程；仅关闭网页不会停止服务。端口占用时拒绝启动，不接管或停止已有服务。
 
-关闭启动窗口或在其中按 **Ctrl+C**，会停止服务及它启动的 CLI 进程树，释放后台内存。仅关闭网页不会停止服务。聊天记录和设置保存在包目录的 `data` 文件夹，下次打开继续使用。
+官方 CLI 默认位置 `%LOCALAPPDATA%\agy\bin\agy.exe`，也支持 PATH；自定义位置可设 `AGY_BINARY` 为完整 exe 路径，不能填入密钥。
 
-官方 CLI 默认安装位置：`%LOCALAPPDATA%\agy\bin\agy.exe`，也支持 PATH 中的 `agy.exe`。自定义安装可先在终端设置 `AGY_BINARY` 为完整 `agy.exe` 路径，再启动。不要把 API 密钥填进这个变量。
+## 数据、升级和卸载
+
+安装版数据在 `%LOCALAPPDATA%\AgyConsole\data`，与程序目录分离；便携版继续使用解压目录里的 `data`。可显式传 `--data "D:\My Data\Agy"`，不会自动搬运或合并未知旧数据。
+
+安装版升级先结束任务并关闭本工具的启动/登录窗口，再运行新的完整 setup.exe，选择原程序目录。安装与卸载检查本工具在当前 Windows 登录会话中的专用 Mutex；运行中会阻止并要求用户先关闭，不自动结束任务，不按进程名强杀其他 Python/CLI。不要在另一个 Windows 登录会话中同时维护同一安装。未知便携目录不可直接覆盖为安装版，须选独立程序目录并自行保留旧数据。
+
+在 Windows“已安装的应用”或开始菜单卸载本工具，只移除安装器登记的程序与入口，默认保留独立 data 和官方登录。`data/software-updates` 内备份/事务不是可随意删除的缓存；卸载后需自行保管数据。
+
+当前 EXE 未附发布者 Windows 代码签名，不能将 SHA-256 校验当作 SmartScreen 信任或全环境验收；从项目 Release 下载并核对 SHA256SUMS。原生 CI 与实际官方登录/模型调用分别记录。
 
 ## 模型排序与额度候补
 
@@ -55,22 +62,23 @@ PAC 自动配置、远端代理和带账号密码的代理不会被自动搬进 
 
 Windows 的 Codex 仍需配置本机协作 Skill/项目指令来自动调用 bridge。这个发行包不会改写你已有的 Codex 指令；仅打开网页不能唤醒闲置的 Codex，也不会自动把这台 Mac 的全部聊天绑定带过去。显示右侧活动页取决于当前 Codex 的浏览器工具及权限。
 
-可直接复制的首次接入、日常协作、故障排查与继续开发提示词见包内 `Windows-Codex-提示词.txt`；先在 Windows Codex 中打开本包解压目录，再复制对应段落。
+首次与 Codex 接入请使用本节示例，并按自己的安装目录调整路径；安装器不会替你修改 Codex 指令。
 
 ## 自检、更新和备份
 
 - **Diagnose.cmd**：检查依赖、官方 CLI、目录和端口；不读取凭据、不调用模型。
 - **Self-Test.cmd**：不调用模型。验证双管道读流、模型顺序，以及启动监管进程被终止后测试子进程是否全部退出。
 - 端口被占用时拒绝重复启动，不会关闭已有服务或其他人的 CLI。
-- Windows 版更新：先关闭原启动窗口，再替换 `app` 等程序文件，保留 `data`，重新打开。为维持关窗清理语义，本版未开放原地重载。
+- Windows 安装版的完整升级用新的 setup.exe；便携版先关启动窗口再按说明更新程序并保留 data。程序更新器仅替换 app 中白名单程序，未开放运行中原地重载。
 - 页面设置可备份聊天、图片和固定绑定；备份不含官方登录和 CLI 内部上下文。跨电脑恢复面板记录不等于恢复官方会话上下文。
 - 本版尚不支持从网页唤起 CC Switch；需要换号时先结束任务、关控制台，在官方 CLI 中完成登录后重开。
 - 外部终端的锁文件与进程映射在 Windows 未实现；无法证明的外部活动显示未知，当前面板派发的任务仍有真实排队、进度、回复和历史。
 
 ## 验证范围
 
-这是 Windows 便携预览包。已在制作端验证 Python 源码编译、跨平台逻辑回归、双管道读流和 ZIP 内容清单；**未在 Windows 实机执行 Job Object、ConPTY、官方登录和真实模型调用**。包内保留 Windows 自检入口，首次运行请先执行 Diagnose.cmd 和 Self-Test.cmd。不要把 macOS 回归结果视为 Windows 实机验收。
+`.6` 的准确公开提交已通过 Windows 原生 6 项测试（管道、ConPTY、Job Object 子进程清理及回环绑定等）。`.7` 新增安装版/便携版数据路径及互斥测试，并由原生 Windows CI 编译真实 EXE，验证含空格路径安装、内置运行时自检、快捷方式、升级/卸载保留独立数据以及运行时阻止维护；实际结果以准确提交 CI 和 Release 记录为准。
 
+这些隔离 CI 测试不登录官方账号、不调用真实模型，不代表旧 Windows、Windows Defender、SmartScreen 或所有电脑环境已验收。较旧安装版本在升级测试中仅通过临时版本标记模拟，不等于两个公开安装版之间的真实升级。
 Windows 命令行长度有限，单次输入限约 26000 个 UTF-16 字符；长材料请拆分为同一会话的多轮任务。关闭窗口时最近约一秒尚未落盘的片段可能丢失，已落盘历史保留。
 
 ## 来源与文件
@@ -83,7 +91,7 @@ Windows 命令行长度有限，单次输入限约 26000 个 UTF-16 字符；长
 
 ## 内置更新
 
-侧栏仅发现新版时出现提醒，点击查看下载/待重启详情；设置显示软件版本与检查更新按钮；更新源由公开发布仓库配置，当前仓库未确定时显示待配置，不访问猜测地址。自动更新默认关闭；开启后只在空闲下载并校验，关闭后下次启动时应用，不改官方CLI、运行时或data。当前程序更新协议见 app/UPDATE-PROTOCOL.md；bootstrap、监管器或运行时的升级需完整安装包。Windows原生更新尚未实机验收。
+侧栏仅发现新版时出现提醒，点击查看下载/待重启详情；设置显示软件版本与检查更新按钮；更新源由公开发布仓库配置，当前仓库未确定时显示待配置，不访问猜测地址。自动更新默认关闭；开启后只在空闲下载并校验，关闭后下次启动时应用，不改官方CLI、运行时或data。当前程序更新协议见 app/UPDATE-PROTOCOL.md；bootstrap、监管器或运行时的升级需完整安装包。程序更新与完整安装器分开验收；真实跨公开版本安装升级仍待验收。
 
 设置 → 配置迁移：导出配置 JSON，在其他设备导入并预览确认。包含界面、全局模型与更新偏好，可选将文字/生图模型、候补排序和协作开关应用到目标聊天；不包含聊天、绑定、官方登录。原配置自动另存，导入不支持的模型会拒绝。
 

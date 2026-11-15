@@ -2,23 +2,21 @@
   "schema_version": 1,
   "product": "Agy Console",
   "status": "ready",
-  "version": "0.1.0-preview.6",
+  "version": "0.1.0-preview.7",
   "repository": "dneo9527-ctrl/agy-console",
   "visibility": "public",
   "license": "MIT",
-  "authorization_reference": "Owner explicitly selected public + MIT in publishing chat on 2026-11-15",
+  "authorization_reference": "Owner requested Windows packaged installer publication via source chat, 2026-11-16; existing public + MIT authorization retained",
   "source_frozen": true,
-  "source_manifest_sha256": "3e42a8852721822d7a704d67411d2a213e53e6f1d021ef00cef9b6e64910db24",
+  "source_manifest_sha256": "27aa442b6f5d661f57e2ae146b2ff9e8f6b518c37281fb17e5f4de33a14a6992",
   "channel": "preview",
   "platforms": [
-    "macos-source",
-    "linux-source",
     "windows-x64"
   ],
   "platform_verification": {
-    "macos-source": "macOS_arm64_tests_passed",
-    "windows-x64": "native_not_run",
-    "linux-source": "native_not_run"
+    "windows-x64": "pending_exact_sha_native_installer_ci",
+    "macos-source": "unchanged public .6",
+    "linux-source": "unchanged public .6"
   },
   "updater_contract": "agreed",
   "publish_authorized": true

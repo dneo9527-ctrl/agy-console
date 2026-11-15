@@ -11,7 +11,7 @@ from audit import run as audit
 sys.path.insert(0, str(ROOT))
 from update_bootstrap import FILES, verify_stage
 
-VERSION = (ROOT/'VERSION').read_text(encoding='utf-8').strip()
+VERSION = json.loads((ROOT/'release.json').read_text(encoding='utf-8'))['version']
 
 
 def write_zip(path, prefix, files, modes=None):
@@ -30,7 +30,7 @@ def write_zip(path, prefix, files, modes=None):
             if archive.read(prefix + name) != data: raise ValueError('Archive byte mismatch')
 
 
-def build(out, vendor_archive, expected_vendor_digest):
+def build(out, vendor_archive, expected_vendor_digest, windows_only=False):
     if audit()['status'] != 'passed': raise ValueError('Source audit failed')
     if sha256(vendor_archive.read_bytes()) != expected_vendor_digest:
         raise ValueError('Windows handoff runtime carrier digest mismatch')
@@ -51,17 +51,18 @@ def build(out, vendor_archive, expected_vendor_digest):
     # Platform source bundles retain tests/docs and full updater bootstrap, not Windows files.
     posix = {n:data for n,data in source.items() if not n.startswith('windows/')}
     modes = {n: 0o100755 if p.stat().st_mode & 0o111 else 0o100644 for n,p in rows}
-    for platform in ('macos','linux'):
+    for platform in (() if windows_only else ('macos','linux')):
         write_zip(out/('AgyConsole-'+VERSION+'-'+platform+'-source-preview.zip'),
                   'AgyConsole-'+VERSION+'/', posix, modes)
-    windows = {n[len('windows/'):]:data for n,data in source.items() if n.startswith('windows/')}
+    windows = {n[len('windows/'):]:data for n,data in source.items()
+               if n.startswith('windows/') and not n.startswith('windows/installer/')}
     windows.update(runtime)
     for name in ('LICENSE','docs/PRIVACY.md','docs/VERIFICATION.md','docs/THIRD-PARTY.md'):
         if name in source: windows[name] = source[name]
     windows['SHA256SUMS.txt'] = ''.join(sha256(data)+'  '+n+'\n' for n,data in sorted(windows.items())).encode()
     write_zip(out/('AgyConsole-'+VERSION+'-windows-x64-preview.zip'), 'AgyConsole-Windows-x64/', windows)
     update_manifest = {'schema':1,'version':VERSION,'platforms':{}}
-    for target in ('macos-arm64','macos-x64','linux-arm64','linux-x64','windows-x64'):
+    for target in (('windows-x64',) if windows_only else ('macos-arm64','macos-x64','linux-arm64','linux-x64','windows-x64')):
         app = ROOT/'windows/app' if target == 'windows-x64' else ROOT
         payload = {n:(app/n).read_bytes() for n in sorted(FILES) if (app/n).is_file()}
         expected = set(manifest()['program_files'][target])
@@ -85,8 +86,9 @@ if __name__ == '__main__':
     p.add_argument('--windows-runtime-carrier',type=Path,required=True)
     p.add_argument('--carrier-sha256',required=True)
     p.add_argument('--report',type=Path,required=True)
+    p.add_argument('--windows-only',action='store_true',help='Publish only Windows; leave Mac/Linux releases unchanged')
     a=p.parse_args()
-    result=build(a.out,a.windows_runtime_carrier,a.carrier_sha256)
+    result=build(a.out,a.windows_runtime_carrier,a.carrier_sha256,a.windows_only)
     a.report.parent.mkdir(parents=True,exist_ok=True)
     a.report.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     print(json.dumps({'version':VERSION,'assets':len(result['assets']),'source_config':result['source_config'],'published':False}))

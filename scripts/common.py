@@ -18,7 +18,7 @@ def safe_path(name):
     p = PurePosixPath(name)
     if (not name or '\\' in name or p.is_absolute() or '..' in p.parts
             or any(part.startswith('.') for part in p.parts)
-            and name not in ('.gitignore', '.github/workflows/checks.yml', '.github/workflows/package.yml')):
+            and name not in ('.gitignore', '.gitattributes', '.github/workflows/checks.yml', '.github/workflows/package.yml')):
         raise ValueError('Unsafe or hidden release path')
     return p
 

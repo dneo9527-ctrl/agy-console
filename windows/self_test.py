@@ -20,6 +20,29 @@ if len(sys.argv)>1 and sys.argv[1]=='--job-fixture':
     raise SystemExit(run_owned([sys.executable,__file__,'--leaf-fixture',sys.argv[2]],ROOT))
 
 class PortableTests(unittest.TestCase):
+    def test_data_layout_preserves_portable_and_separates_installed(self):
+        from unittest.mock import patch
+        from installation import data_directory
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/'program with spaces';root.mkdir()
+            local=Path(directory)/'local app data'
+            self.assertEqual(data_directory(root),root/'data')
+            (root/'installed-mode.json').write_text('{"schema":1,"layout":"per-user"}',encoding='utf-8')
+            with patch.dict(os.environ,{'LOCALAPPDATA':str(local)}):
+                self.assertEqual(data_directory(root),local/'AgyConsole/data')
+                self.assertEqual(data_directory(root,str(root/'explicit data')),(root/'explicit data').resolve())
+            self.assertFalse((root/'data').exists(),'layout selection must not move or create user data')
+            (root/'installed-mode.json').write_text('{"schema":99}',encoding='utf-8')
+            with self.assertRaises(ValueError):data_directory(root)
+
+    @unittest.skipUnless(os.name=='nt','native Windows required')
+    def test_foreground_mutex_refuses_second_owner(self):
+        from installation import ForegroundGuard
+        with ForegroundGuard():
+            with self.assertRaisesRegex(RuntimeError,'already running'):
+                with ForegroundGuard():pass
+        with ForegroundGuard():pass  # clean release permits the next start
+
     def test_loopback_bind_never_resolves_host(self):
         from unittest.mock import patch
         from http.server import BaseHTTPRequestHandler

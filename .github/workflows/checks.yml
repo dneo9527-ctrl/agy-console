@@ -44,7 +44,7 @@ jobs:
 
   windows-native:
     runs-on: windows-2022
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -58,3 +58,24 @@ jobs:
       - run: python -B windows/self_test.py
         # Native imports, pipes, ConPTY and owned Job cleanup with fake children.
         # This does not sign in to the official CLI or call a model.
+      - name: Build real per-user installer with bundled runtime
+        shell: pwsh
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (!(Test-Path -LiteralPath $compiler)) { throw 'Inno Setup compiler is missing; no placeholder build allowed' }
+          python -B scripts/build_windows_installer.py --out work/windows-release --iscc "$compiler"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify real install, upgrade, running guard and uninstall
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem work/windows-release/*-setup.exe).FullName
+          python -u -B windows/installer/test_installer.py --setup "$setup" --report work/windows-installer-verification.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: windows-installer-build-and-verification
+          path: |
+            work/windows-release/*
+            work/windows-installer-verification.json
+          if-no-files-found: error

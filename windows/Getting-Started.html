@@ -1,0 +1,16 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agy Console · Windows 首次使用</title>
+<style>body{font:17px/1.8 system-ui,sans-serif;max-width:760px;margin:48px auto;padding:0 24px;color:#213244;background:#f6f8fa}h1{line-height:1.3}li{margin:16px 0}a{color:#145e92}code{overflow-wrap:anywhere}aside{padding:16px;background:#fff2d8;border-radius:10px}</style>
+<h1>Agy Console 已准备好</h1>
+<p>Windows x64 · 内置 Python，无需管理员权限。这是本机网页控制台，官方 Antigravity CLI 需要你自行安装并登录一次。</p>
+<ol>
+<li><a href="https://antigravity.google/download#antigravity-cli">打开官方 CLI 安装页面</a>，按官方 Windows 步骤安装。已有 CLI 可跳过；本包不会自动执行安装脚本。</li>
+<li>从开始菜单的 Agy Console 文件夹打开 <b>Official CLI Login</b>，或双击程序目录里的 <b>Login-Agy.cmd</b>。在官方界面完成本人登录。已有登录可跳过。</li>
+<li>双击桌面 <b>Agy Console</b> 或程序目录里的 <b>Start-Agy.cmd</b>。等待启动窗口显示服务就绪，并保持窗口打开。</li>
+<li><a href="http://127.0.0.1:8765/">打开面板</a>，或从开始菜单选 <b>Open Panel</b>。关闭网页不会停止服务。</li>
+</ol>
+<aside><b>结束使用：</b>关闭启动窗口或按 Ctrl+C，停止本工具启动的服务和 CLI 子进程。升级或卸载前请先结束任务并关闭该窗口；安装器不会替你强制终止任务。</aside>
+<p>安装版把聊天数据保存在 <code>%LOCALAPPDATA%\AgyConsole\data</code>；升级和卸载默认保留。便携 ZIP 仍使用自身目录里的 <code>data</code>。两者不会自动合并旧数据；请先用面板的备份功能保留记录。</p>
+<p>程序更新包只更新面板程序，不会安装本向导、官方 CLI 或运行时。完整安装版升级请下载新的 setup.exe，先关本工具，再安装到原安装位置。</p>
+<p>当前为未附发布者代码签名的开发者预览，尚未验收真实官方登录及所有机器环境。只从<a href="https://github.com/dneo9527-ctrl/agy-console/releases">项目 Releases</a>下载并核对 SHA256SUMS。<a href="README.md">完整说明</a>。</p>
+</html>

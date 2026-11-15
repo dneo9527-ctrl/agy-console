@@ -2,7 +2,7 @@
 
 本机网页控制台：通过官方 Antigravity CLI 派发任务、续接会话、查看进度，并让每个 Codex 聊天保留自己的固定协作入口。
 
-**v0.1.0-preview.6 · 开发者预览 · MIT**
+**Mac/Linux v0.1.0-preview.6 · Windows v0.1.0-preview.7 · 开发者预览 · MIT**
 
 - **连续协作**：固定聊天绑定、工作会话、任务队列与采纳记录；简短状态不会冒充模型完成。
 - **模型与候补**：文字、生图分别选择模型和档位；按保存顺序处理明确的额度耗尽。
@@ -14,17 +14,19 @@
 
 [下载 v0.1.0-preview.6](https://github.com/dneo9527-ctrl/agy-console/releases/tag/v0.1.0-preview.6) · [测试与构建](https://github.com/dneo9527-ctrl/agy-console/actions/workflows/checks.yml)
 
-请选择完整包；`*-program.zip` 仅供内置更新器使用。
+Windows 普通用户选择 `.7` 安装向导；Mac/Linux 保持已公开的 `.6` 源码预览。请选择完整包；`*-program.zip` 仅供内置更新器使用。
 
 | 平台 | 安装包 | 要求与验证范围 |
 | --- | --- | --- |
 | macOS | [Mac 源码预览](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.6/AgyConsole-0.1.0-preview.6-macos-source-preview.zip) | Python 3.9+；arm64 本机回归通过，Intel/旧系统未实机验证；无 Developer ID/公证 |
-| Windows | [Windows x64 便携预览](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.6/AgyConsole-0.1.0-preview.6-windows-x64-preview.zip) | 内置 Python 3.13.17；Windows 10 1809+/11 x64 目标；原生验收待 CI/实机记录 |
+| Windows | [Windows x64 安装向导](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.7/AgyConsole-0.1.0-preview.7-windows-x64-setup.exe) · [完整便携包](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.7/AgyConsole-0.1.0-preview.7-windows-x64-preview.zip) | 内置 Python 3.13.17；Windows 10 1809+/11 x64 目标；无发布者代码签名；原生 CI 与真实登录分开记录 |
 | Linux | [Linux 源码预览](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.6/AgyConsole-0.1.0-preview.6-linux-source-preview.zip) | Python 3.9+；x64/arm64 为源码预览，原生验收待 CI/实机记录 |
 
 1. 安装并登录 [官方 Antigravity CLI](https://antigravity.google/docs/install?tab=cli)，无需为每个聊天重复登录。
 2. 完整解压到可写目录。Mac 双击 `启动控制台.command`；Linux 在终端执行 `./Start-Agy.sh`；Windows 用 `Start-Agy.cmd`。
 3. 打开 `http://127.0.0.1:8765/`，保持启动终端打开。关闭终端会结束服务和它启动的 CLI；关闭网页只关闭页面。
+
+Windows 安装向导创建桌面/开始菜单入口，首次指南提供官方 CLI 安装与登录入口；数据在 `%LOCALAPPDATA%\AgyConsole\data`，升级/卸载默认保留。便携版保留自身 data，不自动合并。运行中需先关本工具再升级/卸载。详见 [Windows 说明](windows/README.md)。
 
 端口被占用时拒绝重复启动。聊天和设置保存在自己的 `data` 中；首次启动不导入旧工程历史。详见 [安装与更新](docs/INSTALL.md)。
 
