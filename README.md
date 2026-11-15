@@ -59,6 +59,6 @@ python3 -B scripts/check.py --report work/checks.json
 python3 -B scripts/test_framework.py
 ```
 
-CI 默认只读权限，不自动发布 Release。[发布手册](docs/RELEASING.md)
+测试另需 C 编译器（用于真实控制终端夹具，不是安装程序的依赖）。CI 默认只读权限，不自动发布 Release。[发布手册](docs/RELEASING.md)
 
 本项目自有源码采用 [MIT 许可证](LICENSE)；第三方运行时的许可保持独立，见 [第三方说明](docs/THIRD-PARTY.md)。

@@ -8,7 +8,7 @@
   "license": "MIT",
   "authorization_reference": "Owner explicitly selected public + MIT in publishing chat on 2026-11-15",
   "source_frozen": true,
-  "source_manifest_sha256": "890670975d5dfe5fc99626918baae94f2c6e1e8d7be1063f0b09ba75bd12b3d3",
+  "source_manifest_sha256": "c8626f55ef09248444ec54fe22ef39690441302e0e74be914683b099b22a385a",
   "channel": "preview",
   "platforms": [
     "macos-source",
