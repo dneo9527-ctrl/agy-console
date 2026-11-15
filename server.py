@@ -14,6 +14,7 @@ import re
 import secrets
 import selectors
 import signal
+import socketserver
 import subprocess
 import sys
 import termios
@@ -52,6 +53,13 @@ class ConflictError(ValueError):
 
 
 class ForegroundHTTPServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # A numeric loopback listener needs no reverse DNS. HTTPServer's default
+        # getfqdn() can block startup on machines without a responsive resolver.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = 'localhost'
+        self.server_port = self.server_address[1]
+
     def __init__(self, *args, **kwargs):
         self.requests_changed = threading.Condition()
         self.active_requests = 0
@@ -203,7 +211,8 @@ class Console:
         candidates=[(c,t) for c in self.state['conversations'] for t in c['turns']
                     if t.get('status')=='failed' and t.get('exit_code')==0
                     and t.get('kind','text')=='text' and t.get('response','').strip()
-                    and str(t.get('error','')).startswith('API error') and not t.get('session_mismatch')]
+                    and (str(t.get('error','')).startswith('API error') or quota_rejection(t.get('error')))
+                    and not t.get('session_mismatch')]
         candidates.sort(key=lambda pair:pair[1].get('created_at',''),reverse=True)
         repaired=[]
         for conv,turn in candidates[:12]:
@@ -229,7 +238,11 @@ class Console:
                 lane=branch_for(conv,turn.get('branch'));expected=turn.get('agy_id') or (lane or {}).get('agy_id')
                 if not valid or not expected or result.get('conversation_id')!=expected or result.get('response')!=turn['response']:
                     continue
-                proof=evidence.prove_historical_error(result,root=self.activity.root)
+                window = None
+                if turn.get('started_at') and turn.get('ended_at'):
+                    window = tuple(datetime.fromisoformat(turn[key].replace('Z', '+00:00')).timestamp()
+                                   for key in ('started_at', 'ended_at'))
+                proof=evidence.prove_historical_error(result,root=self.activity.root,time_window=window)
                 if proof:repaired.append((turn,proof,evidence.current_usage()))
             except (OSError,ValueError,TypeError,AttributeError):
                 continue
@@ -242,6 +255,11 @@ class Console:
             for turn,proof,usage in repaired:
                 turn.update(status_before_recheck=turn['status'],error_before_recheck=turn['error'],
                             status='completed',error='',completion_evidence=proof,rechecked_at=now())
+                turn.pop('fallback_notice', None)
+                if turn.get('attempts'):
+                    attempt = turn['attempts'][-1]
+                    attempt.update(status_before_recheck=attempt.get('status'), error_before_recheck=attempt.get('error'),
+                                   status='completed', error='')
                 if turn.get('progress'):
                     finish_progress(turn)
                 if usage is not None:
@@ -1363,7 +1381,8 @@ class Console:
                     if turn['status'] not in {'cancelled', 'cancelling'}:
                         confirmation = None
                         if code == 0 and not denial and not turn.get('session_mismatch'):
-                            confirmation = evidence.prove_historical_error(result, root=self.activity.root)
+                            confirmation = evidence.prove_historical_error(result, root=self.activity.root,
+                                                                            time_window=(started_wall, time.time()))
                         if confirmation:
                             turn['completion_evidence'] = confirmation
                         success = (code == 0 and (result.get('status') == 'SUCCESS' or confirmation is not None)
@@ -1443,8 +1462,20 @@ class Console:
                             turn.pop('exit_code', None)
                             retry_item = (cid, tid)
                     elif turn['status'] == 'failed' and quota_rejection(turn.get('error')):
-                        turn['fallback_notice'] = ('未确认是本轮额度拒绝，未将模型标为耗尽；已保留原结果，请核对本轮回复与工具状态。' if not current_quota else
-                                                  '未自动重跑：已有输出、执行状态不明确、固定模型或已达到一次恢复上限；可核对结果后手动继续。')
+                        if not current_quota:
+                            notice = '未确认是本轮额度拒绝，未将当前模型标为耗尽。已保留结果，请核对本轮回复与工具状态。'
+                        elif not turn.get('fallback_enabled'):
+                            notice = ('本次请求明确指定模型，未启用自动候补。' if turn.get('model_selection') == 'explicit' else
+                                      '本窗口已关闭额度用完自动候补。')
+                        elif len(turn.get('attempts', [])) >= 2:
+                            notice = '已自动候补一次，仍未完成；达到本轮自动恢复上限，结果已保留。'
+                        elif not same_account:
+                            notice = '无法确认仍是原 CLI 账号，未自动续接；请核对账号后恢复任务。'
+                        elif turn.get('response') or turn.get('images') or guard.unsafe:
+                            notice = '本轮已有内容或工具操作，未自动重跑以免重复执行。请核对结果后使用“恢复任务”继续。'
+                        else:
+                            notice = '未取得原会话安全续接的完整证据，未自动重跑；请核对结果后恢复任务。'
+                        turn['fallback_notice'] = notice
                     if retry_item is None:
                         finish_progress(turn)
                         attempts = turn.get('attempts', [])

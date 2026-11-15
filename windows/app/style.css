@@ -536,3 +536,8 @@
 
 .fallback-scope-row{display:flex;align-items:center;gap:8px;margin:2px 0 9px;color:#a9b6ca;font-size:12px}.fallback-scope-row select{flex:1;min-width:0;border:1px solid #46516a;border-radius:7px;background:#202532;color:#dfe6f4;font:inherit;padding:6px}
 .composer-caption #queue-toggle{flex:0 1 auto;max-width:calc(100% - 105px);width:auto;text-overflow:ellipsis}
+
+/* A persistent sidebar control on every screen width; closing releases chat width. */
+.sidebar:not(.open){display:none}
+#menu{display:inline-grid;place-items:center;position:static;flex-shrink:0;z-index:7;background:var(--side)}
+@media(max-width:740px){#menu{position:fixed;top:22px;left:16px}#menu[aria-expanded="true"]{left:200px;top:31px}}

@@ -5,11 +5,67 @@ fallback requires a fully finished stream and matching, read-only official
 steps; an unknown schema or unavailable evidence leaves ERROR unchanged.
 """
 from pathlib import Path
+import hashlib
+import json
 import math
 import re
 import sqlite3
 
-from activity_monitor import read_rows
+from activity_monitor import read_rows, proto_fields, visible_step
+
+
+def artifact_write_proof(payload, tool, cli_root, sid, response, time_window):
+    """Known write_file schema + exact on-disk content, never re-execute a tool.
+
+    Only a completed Markdown artifact inside this official session is supported.
+    Unknown tool results, arbitrary project writes and changed files stay unknown.
+    """
+    try:
+        if time_window is None or len(time_window) != 2:
+            return None
+        start, end = time_window
+        if not all(type(t) in (int, float) and math.isfinite(t) for t in (start, end)) or end < start:
+            return None
+        fields = proto_fields(payload)
+        if fields.get(1) != 132 or fields.get(4) != 3:
+            return None
+        call = proto_fields(proto_fields(fields[5])[4])
+        parameters = json.loads(call[3])
+        if not isinstance(parameters, dict) or call[2] != b'write_file' or parameters.get('Path') != tool.get('path'):
+            return None
+        content = parameters.get('Content')
+        if not isinstance(content, str) or not 0 < len(content.encode('utf-8')) <= 1000000:
+            return None
+        target = Path(parameters['Path'])
+        base = cli_root / 'brain' / sid
+        # No globbing, arbitrary paths, symlink traversals or hidden CLI metadata.
+        relative = target.relative_to(base)
+        if (not target.is_absolute() or target.suffix.lower() != '.md' or not relative.parts
+                or any(part.startswith('.') for part in relative.parts)
+                or str(target) not in response):
+            return None
+        if not target.resolve().is_relative_to(base.resolve()):
+            return None
+        parents = [cli_root / 'brain', base, target]
+        path = target.parent
+        while path != base:
+            parents.append(path)
+            path = path.parent
+        for path in parents:
+            if path.is_symlink():
+                return None
+        if not target.is_file():
+            return None
+        info = target.stat()
+        if not 0 < info.st_size <= 1000000 or not start - 1 <= info.st_mtime <= end + 3:
+            return None
+        raw = target.read_bytes()
+        if raw != content.encode('utf-8'):
+            return None
+        return {'tool': 'write_file', 'artifact': relative.as_posix(),
+                'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw)}
+    except (OSError, ValueError, KeyError, TypeError, UnicodeError):
+        return None
 
 
 class TurnEvidence:
@@ -45,7 +101,8 @@ class TurnEvidence:
             params = info.get('parameters') or {}
             previous['tool'] = {'name': step.get('tool_name'), 'reported_name': info.get('name'),
                                 'path': params.get('Path'), 'output': str(info.get('output') or '')[:200],
-                                'failed': bool(info.get('error') or info.get('denied') or info.get('success') is False)}
+                                'failed': bool((previous.get('tool') or {}).get('failed') or info.get('error')
+                                               or info.get('denied') or info.get('success') is False)}
         if isinstance(step.get('text_delta'), str):
             self.text_chars += len(step['text_delta'])
             if self.text_chars > 1000000:
@@ -82,7 +139,7 @@ class TurnEvidence:
             return None
         return {'source': 'cli_checkpoint', 'conversation_id': sid, 'step_index': max(checkpoints)}
 
-    def prove_historical_error(self, result, root=None, reader=None):
+    def prove_historical_error(self, result, root=None, reader=None, time_window=None):
         sid, error = result.get('conversation_id'), result.get('error')
         if (self.invalid or result.get('status') != 'ERROR'
                 or result.get('finished_reason') != 'error' or result.get('denied_actions')
@@ -107,18 +164,23 @@ class TurnEvidence:
             return None
         cli_root = Path(root) if root is not None else Path.home() / '.gemini/antigravity-cli'
         transcript = str(cli_root / 'brain' / sid / '.system_generated/logs/transcript.jsonl')
+        writes = []
         for index, step in self.steps.items():
             if step.get('step_type') != 'tool':
                 continue
             tool = step.get('tool') or {}
-            if (index > last_response or step.get('done_event', 0) > self.steps[last_response].get('done_event', 0)
-                    or tool.get('name') != 'read_file' or tool.get('reported_name') != 'read_file'
-                    or tool.get('path') != transcript or tool.get('failed')
+            if (index > last_response or step.get('done_event', 0) >= self.steps[last_response].get('done_event', 0)
+                    or tool.get('failed') or tool.get('name') != tool.get('reported_name')):
+                return None
+            if tool.get('name') == 'write_file':
+                writes.append(index)
+            elif (tool.get('name') != 'read_file' or tool.get('path') != transcript
                     or not re.fullmatch(r'\d+ lines,\s*\d+ bytes', tool.get('output', ''))):
                 return None
         database = cli_root / 'conversations' / (sid + '.db')
         reader = reader or read_rows
         query = ('SELECT idx,step_type,status, '
+                 'CASE WHEN step_type IN (132,15) THEN step_payload ELSE NULL END AS proof_payload, '
                  'CASE WHEN step_type=17 AND instr(step_payload,CAST(? AS BLOB))>0 THEN 1 ELSE 0 END AS error_matches '
                  'FROM steps WHERE (idx>=? AND idx<COALESCE('
                  '(SELECT MIN(idx) FROM steps WHERE idx>? AND step_type=14),9223372036854775807)) OR '
@@ -148,6 +210,23 @@ class TurnEvidence:
                     return None
             elif not older:
                 return None
+            artifact_proofs = []
+            if writes:
+                # This extension handles only historical pollution. A real error
+                # inside a work-bearing turn is never silently cleared or replayed.
+                if recovered or not current or current[-1]['idx'] != last_response:
+                    return None
+                final = visible_step(dict(idx=last_response, step_type=15, status=3,
+                                          step_payload=current[-1]['proof_payload']))
+                if not final or final['truncated'] or final['text'].strip() != result['response'].strip():
+                    return None
+                by_index = {row['idx']: row for row in current}
+                for index in writes:
+                    proof = artifact_write_proof(by_index[index]['proof_payload'], self.steps[index]['tool'],
+                                                 cli_root, sid, result['response'], time_window)
+                    if proof is None:
+                        return None
+                    artifact_proofs.append(dict(proof, step_index=index))
         except (OSError, sqlite3.Error, ValueError, KeyError, TypeError):
             return None
         confirmation = {'source': 'official_recovered_api_error' if recovered else 'official_current_turn',
@@ -157,4 +236,6 @@ class TurnEvidence:
             confirmation['historical_error_step'] = max(r['idx'] for r in older)
         if recovered:
             confirmation['recovered_error_steps'] = [r['idx'] for r in recovered]
+        if artifact_proofs:
+            confirmation['artifacts'] = artifact_proofs
         return confirmation

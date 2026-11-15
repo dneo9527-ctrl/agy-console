@@ -31,9 +31,8 @@ def main():
         (test_root/'release-source.json').write_text('{"repository":"","channel":"preview"}\n',encoding='utf-8')
         result['test_configuration'] = 'Deployment repository blanked in disposable copy; program bytes unchanged'
         suites = sorted(p.name for p in ROOT.glob('test_*.py'))
-        # PTY fork fixtures must start in a fresh interpreter, before importing
-        # server tests that create threads or initialize platform system libraries.
-        # All suites still run; keep each process's full result rather than retrying.
+        # Keep controlling-terminal fixture diagnostics separate from ordinary
+        # server tests. All suites run once and retain each process's full result.
         terminal = ['test_terminal_lifecycle.py'] if 'test_terminal_lifecycle.py' in suites else []
         groups = [terminal, [name for name in suites if name not in terminal]]
         runs = []

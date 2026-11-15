@@ -20,6 +20,18 @@ if len(sys.argv)>1 and sys.argv[1]=='--job-fixture':
     raise SystemExit(run_owned([sys.executable,__file__,'--leaf-fixture',sys.argv[2]],ROOT))
 
 class PortableTests(unittest.TestCase):
+    def test_loopback_bind_never_resolves_host(self):
+        from unittest.mock import patch
+        from http.server import BaseHTTPRequestHandler
+        from server import ForegroundHTTPServer
+        with patch('socket.getfqdn', side_effect=AssertionError('Unexpected reverse DNS')):
+            server=ForegroundHTTPServer(('127.0.0.1',0),BaseHTTPRequestHandler)
+            try:
+                self.assertEqual(server.server_name,'localhost')
+                self.assertGreater(server.server_port,0)
+            finally:
+                server.server_close()
+
     def test_pipe_output_and_error_and_eof(self):
         proc=subprocess.Popen([sys.executable,'-u','-c','import sys; print("stream-ok"); print("error-ok",file=sys.stderr)'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         reader=PipeSelector();reader.register(proc.stdout,1,'out');reader.register(proc.stderr,1,'err')

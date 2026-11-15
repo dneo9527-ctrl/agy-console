@@ -32,17 +32,36 @@ def history(root):
         return {'status': 'not_run', 'reason': 'No repository rooted at candidate'}, []
     rows = subprocess.check_output(['git', 'rev-list', '--objects', '--all'], cwd=root).splitlines()
     issues, blobs = [], 0
-    for row in rows:
-        oid, _, raw_name = row.partition(b' ')
-        kind = subprocess.check_output(['git', 'cat-file', '-t', oid.decode()], cwd=root).strip()
+    names = {row.partition(b' ')[0]: row.partition(b' ')[2].decode('utf-8', errors='replace') for row in rows}
+    if not names:
+        return {'status': 'passed', 'blobs': 0}, []
+    metadata = subprocess.check_output(['git', 'cat-file', '--batch-check'], cwd=root,
+                                       input=b'\n'.join(names) + b'\n').splitlines()
+    requested = []
+    for row in metadata:
+        oid, kind, raw_size = row.split()
         if kind != b'blob':
             continue
-        size = int(subprocess.check_output(['git', 'cat-file', '-s', oid.decode()], cwd=root))
-        name = raw_name.decode('utf-8', errors='replace')
-        if size > 32 * 1024 * 1024:
-            issues.append({'file': name, 'rule': 'history_blob_too_large_for_audit'})
-            continue
-        data = subprocess.check_output(['git', 'cat-file', 'blob', oid.decode()], cwd=root)
+        if int(raw_size) > 32 * 1024 * 1024:
+            issues.append({'file': names[oid], 'rule': 'history_blob_too_large_for_audit'})
+        else:
+            requested.append(oid)
+    # Length-framed Git output preserves arbitrary file bytes and avoids spawning
+    # several interpreter processes per blob on CI. Every reachable blob is covered.
+    raw = subprocess.check_output(['git', 'cat-file', '--batch'], cwd=root,
+                                  input=b'\n'.join(requested) + b'\n') if requested else b''
+    cursor = 0
+    for expected_oid in requested:
+        end = raw.index(b'\n', cursor)
+        oid, kind, raw_size = raw[cursor:end].split()
+        size = int(raw_size)
+        if oid != expected_oid or kind != b'blob':
+            raise ValueError('Unexpected Git object frame')
+        data = raw[end + 1:end + 1 + size]
+        if len(data) != size or raw[end + 1 + size:end + 2 + size] != b'\n':
+            raise ValueError('Truncated Git blob')
+        cursor = end + size + 2
+        name = names[oid]
         issues += findings(data, name)
         if FORBIDDEN.intersection(Path(name).parts):
             issues.append({'file': name, 'rule': 'private_state_in_history'})

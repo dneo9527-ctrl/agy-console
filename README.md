@@ -2,7 +2,7 @@
 
 本机网页控制台：通过官方 Antigravity CLI 派发任务、续接会话、查看进度，并让每个 Codex 聊天保留自己的固定协作入口。
 
-**v0.1.0-preview.4 · 开发者预览 · MIT**
+**v0.1.0-preview.6 · 开发者预览 · MIT**
 
 - **连续协作**：固定聊天绑定、工作会话、任务队列与采纳记录；简短状态不会冒充模型完成。
 - **模型与候补**：文字、生图分别选择模型和档位；按保存顺序处理明确的额度耗尽。
@@ -12,15 +12,15 @@
 
 ## 下载与启动
 
-[下载 v0.1.0-preview.4](https://github.com/dneo9527-ctrl/agy-console/releases/tag/v0.1.0-preview.4) · [测试与构建](https://github.com/dneo9527-ctrl/agy-console/actions/workflows/checks.yml)
+[下载 v0.1.0-preview.6](https://github.com/dneo9527-ctrl/agy-console/releases/tag/v0.1.0-preview.6) · [测试与构建](https://github.com/dneo9527-ctrl/agy-console/actions/workflows/checks.yml)
 
 请选择完整包；`*-program.zip` 仅供内置更新器使用。
 
 | 平台 | 安装包 | 要求与验证范围 |
 | --- | --- | --- |
-| macOS | [Mac 源码预览](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.4/AgyConsole-0.1.0-preview.4-macos-source-preview.zip) | Python 3.9+；arm64 本机回归通过，Intel/旧系统未实机验证；无 Developer ID/公证 |
-| Windows | [Windows x64 便携预览](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.4/AgyConsole-0.1.0-preview.4-windows-x64-preview.zip) | 内置 Python 3.13.17；Windows 10 1809+/11 x64 目标；原生验收待 CI/实机记录 |
-| Linux | [Linux 源码预览](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.4/AgyConsole-0.1.0-preview.4-linux-source-preview.zip) | Python 3.9+；x64/arm64 为源码预览，原生验收待 CI/实机记录 |
+| macOS | [Mac 源码预览](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.6/AgyConsole-0.1.0-preview.6-macos-source-preview.zip) | Python 3.9+；arm64 本机回归通过，Intel/旧系统未实机验证；无 Developer ID/公证 |
+| Windows | [Windows x64 便携预览](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.6/AgyConsole-0.1.0-preview.6-windows-x64-preview.zip) | 内置 Python 3.13.17；Windows 10 1809+/11 x64 目标；原生验收待 CI/实机记录 |
+| Linux | [Linux 源码预览](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.6/AgyConsole-0.1.0-preview.6-linux-source-preview.zip) | Python 3.9+；x64/arm64 为源码预览，原生验收待 CI/实机记录 |
 
 1. 安装并登录 [官方 Antigravity CLI](https://antigravity.google/docs/install?tab=cli)，无需为每个聊天重复登录。
 2. 完整解压到可写目录。Mac 双击 `启动控制台.command`；Linux 在终端执行 `./Start-Agy.sh`；Windows 用 `Start-Agy.cmd`。
@@ -28,7 +28,9 @@
 
 端口被占用时拒绝重复启动。聊天和设置保存在自己的 `data` 中；首次启动不导入旧工程历史。详见 [安装与更新](docs/INSTALL.md)。
 
-## v0.1.0-preview.4
+## v0.1.0-preview.6
+
+菜单按钮在宽屏与窄屏常驻，可折叠侧栏；修复已完成任务继承历史额度错误的误报，仅在严格的官方产物证据满足时修正状态，不重跑模型。
 
 合并重复的队列/终端入口；共享总览的候补配置可展开后明确选择目标聊天，固定聊天直接配置自身。文字与生图独立，离线可查看，保存时验证目标。
 
@@ -49,7 +51,7 @@ Windows 使用包内 `runtime/python.exe` 与 `app/bridge.py`。`CODEX_THREAD_ID
 
 ## 验证与边界
 
-开发交接记录 235 项 Python、30 组 JS 和 19 项配置/更新检查通过；发布候选会单独重跑。Windows 原生、Linux 原生、公开附件更新与下载后首次打开分别记录，不能用 Mac 的测试结果代替。[验证详情](docs/VERIFICATION.md)
+最新开发端 241 项 Python、30 组 JS 通过；发布端还修复了回环绑定时的反向 DNS 等待，添加独立回归并对准确提交执行多平台 CI。Windows 原生、Linux 原生、公开附件更新与下载后首次打开分别记录，不能用 Mac 的测试结果代替。[验证详情](docs/VERIFICATION.md)
 
 仅绑定本机回环地址，适用于受信本机环境；不是多用户认证服务。聊天内容会按任务经官方 CLI 发给相应服务商。备份含私人历史，不应上传到仓库或 Issue。[隐私说明](docs/PRIVACY.md)
 
@@ -61,6 +63,6 @@ python3 -B scripts/check.py --report work/checks.json
 python3 -B scripts/test_framework.py
 ```
 
-测试另需 C 编译器（用于真实控制终端夹具，不是安装程序的依赖）。CI 默认只读权限，不自动发布 Release。[发布手册](docs/RELEASING.md)
+测试夹具需要 C 编译器；程序安装和运行不需要。CI 默认只读权限，不自动发布 Release。[发布手册](docs/RELEASING.md)
 
 本项目自有源码采用 [MIT 许可证](LICENSE)；第三方运行时的许可保持独立，见 [第三方说明](docs/THIRD-PARTY.md)。

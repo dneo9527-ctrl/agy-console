@@ -41,7 +41,6 @@ else:
 
 PTY_EXEC = None
 PTY_BUILD = None
-SAMPLED_FAILURE = False
 
 
 def terminal_exec_helper():
@@ -57,10 +56,8 @@ def terminal_exec_helper():
 #include <stdio.h>
 int main(int argc, char **argv) {
     if (argc < 2) return 2;
-    fprintf(stderr, "[PTY native helper entered]\\n"); fflush(stderr);
     if (ioctl(STDIN_FILENO, TIOCSCTTY, 0) == -1) { perror("TIOCSCTTY"); return 3; }
     if (tcsetpgrp(STDIN_FILENO, getpgrp()) == -1) { perror("tcsetpgrp"); return 4; }
-    fprintf(stderr, "[PTY executing child]\\n"); fflush(stderr);
     execvp(argv[1], argv + 1);
     perror("execvp"); return 127;
 }
@@ -176,7 +173,6 @@ class TerminalLifecycleTests(unittest.TestCase):
         self.temp.cleanup()
 
     def wait_until(self, check, message, timeout=8):
-        global SAMPLED_FAILURE
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             for proc in self.terminals:
@@ -184,17 +180,9 @@ class TerminalLifecycleTests(unittest.TestCase):
             if check():
                 return
             time.sleep(.03)
-        diagnostic = ''
-        if sys.platform == 'darwin' and not SAMPLED_FAILURE:
-            SAMPLED_FAILURE = True
-            for proc in self.terminals:
-                if proc.poll() is None:
-                    snapshot = subprocess.run(['/usr/bin/sample', str(proc.pid), '1', '1'],
-                                              capture_output=True, text=True, timeout=8)
-                    diagnostic += '\nOWNED TEST CHILD SAMPLE:\n' + snapshot.stdout[:18000] + snapshot.stderr[:1000]
         self.fail(message + '\n' + '\n'.join(
             'PTY pid=' + str(p.pid) + ' exit=' + str(p.poll()) + '\n' + p.output.decode(errors='replace')
-            for p in self.terminals) + diagnostic)
+            for p in self.terminals))
 
     def request(self, method, path, body=None):
         client = http.client.HTTPConnection('127.0.0.1', self.port, timeout=1)

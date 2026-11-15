@@ -12,4 +12,11 @@ ctx.rememberProgressExpansion('one',false);assert.ok(!ctx.taskProgressHTML(turn)
 html=ctx.taskProgressHTML({id:'old',status:'completed',events:['旧事件']});assert.match(html,/旧记录没有步骤时间/);assert.ok(!html.includes('更新'));
 assert.equal(ctx.taskProgressHTML({id:'empty',status:'completed'}),'');
 for(let i=0;i<150;i++)ctx.rememberProgressExpansion('turn-'+i,true);assert.ok(!ctx.taskProgressHTML(turn).includes(' open>'),'old expansion state is bounded');
+html=ctx.modelChangesHTML({status:'failed',fallback_notice:'已有工具 <write>，未重跑',attempts:[]});
+assert.match(html,/<details[^>]+ open>/);assert.match(html,/未自动切换 · 原因/);assert.match(html,/&lt;write>/);
+assert.equal(ctx.modelChangesHTML({status:'completed'}),'');
+assert.match(ctx.modelChangesHTML({status:'completed',model_changes:[{from:'Argon',to:'Flash',reason:'quota'}]}),/模型切换 · 1 次/);
+assert.equal(ctx.completionStatusLabel({status:'completed',completion_evidence:{source:'official_current_turn',raw_cli_error:'Individual quota reached'}}),'已完成 · 已排除旧额度错误');
+assert.equal(ctx.completionStatusLabel({status:'completed',completion_evidence:{source:'official_recovered_api_error'}}),'重试后已回复');
+assert.equal(ctx.completionStatusLabel({status:'completed'}),'已完成');
 console.log('Task progress UI passed: collapsed by default, per-turn expansion retained, bounded state, escaped labels and honest legacy timestamps.');

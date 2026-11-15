@@ -1,104 +1,41 @@
 {
-  "version": "0.1.0-preview.4",
-  "stage": "local_frontend_patch_under_revalidation",
+  "version": "0.1.0-preview.6",
+  "stage": "local_candidate_evidence",
   "repository": "dneo9527-ctrl/agy-console",
-  "remote_actions_performed": false,
-  "developer_source_files_verified": 131,
-  "developer_original_assets_verified": 9,
-  "source_tests": {
-    "status": "passed",
-    "python": 235,
-    "javascript_suites": 30,
-    "isolation": "Deployment repository blanked in disposable copy; program bytes unchanged"
-  },
-  "framework_tests": {
-    "passed": 7
-  },
-  "windows_portable_on_mac": {
-    "passed": 2,
-    "native_skipped": 3
-  },
-  "program_packages": [
-    {
-      "target": "macos-arm64",
-      "status": "client_verify_stage_passed",
-      "files": 25
-    },
-    {
-      "target": "macos-x64",
-      "status": "client_verify_stage_passed",
-      "files": 25
-    },
-    {
-      "target": "linux-arm64",
-      "status": "client_verify_stage_passed",
-      "files": 25
-    },
-    {
-      "target": "linux-x64",
-      "status": "client_verify_stage_passed",
-      "files": 25
-    },
-    {
-      "target": "windows-x64",
-      "status": "client_verify_stage_passed",
-      "files": 26
-    }
-  ],
-  "actions_yaml": "syntax_passed_not_executed_remotely",
-  "pending": [
-    "Exact-SHA remote CI",
-    "Release publication and public redownload",
-    "Public updater networking verification"
-  ],
-  "native_limits": [
-    "Windows user login/model not tested",
-    "Linux user installation not tested",
-    "Developer ID/notarization/fresh download first-open not tested"
-  ],
   "visibility": "public",
   "license": "MIT",
   "owner_decision": "Explicit public + MIT selection, 2026-11-15",
-  "new_frontend_handoff": {
-    "version": "0.1.0-preview.4",
-    "js_suites_passed": 30,
-    "live": {
-      "version": "0.1.0-preview.4",
-      "pid": 81337,
-      "instance_id": "a2f675febf397c9e",
-      "same_foreground_pid": true,
-      "browser": {
-        "queue_footer": "single control; actual1running0queued then idle seen; opens real queue",
-        "root_fallback": "configuration expands with empty explicit scope, selected current chat renders saved choices",
-        "image_text_independent": "switched selectors and confirmed distinct values, no save made",
-        "fixed_fallback": "expands directly, scope selector hidden"
-      },
-      "preferences_modified": false,
-      "python_backend": "unchanged from.3; no repeat tests",
-      "remote_CI": "not executed by this chat; known earlier Mac3.13 CI failure remains publishing responsibility"
+  "developer_source_files_verified": 132,
+  "developer_manifest_sha256": "20ecb47009c4b27460c5d2ea1d9c4c61f5e7f3045aed38bfc36d81fa8139c5de",
+  "developer_original_assets_verified": 9,
+  "developer_regressions": {
+    "python": 241,
+    "tested_version": "0.1.0-preview.5",
+    "js_suites": 30,
+    "js_version": "0.1.0-preview.6"
+  },
+  "new_visual_QA": "not_run; .6 frontend fixtures and HTTP structure only",
+  "publication_fix": "Bypass HTTPServer reverse-DNS lookup for numeric loopback; production code and Windows variant; original PTY assertions retained",
+  "exact_sha_ci": "See Release notes for final immutable SHA run",
+  "public_artifact_and_updater_verification": "See Release notes and final external publication verification report",
+  "unverified": [
+    "Windows/Linux real official CLI login/model calls",
+    "Fresh-Mac quarantine first open",
+    "Developer ID/notarization",
+    "Old OS and end-user installation",
+    "Real prior-public-version to new-public-version update installation"
+  ],
+  "local_regressions": {
+    "python_unique": 242,
+    "regular_suite": 232,
+    "controlling_terminal": 10,
+    "additional_loopback_test": "included in regular 232 and separately rerun with terminal tests",
+    "javascript_suites": 30,
+    "release_framework_tests": 7,
+    "windows_on_mac": {
+      "passed": 3,
+      "native_skipped": 3
     },
-    "source_manifest_sha256": "c59a52df218ad5aa7021559b2bff718bacde17f1a68db526ec89322216737608",
-    "files_changed_from_3": [
-      "CHANGELOG.md",
-      "README.md",
-      "VERSION",
-      "app.js",
-      "index.html",
-      "style.css",
-      "test_candidate_priority.js",
-      "test_live_memory.js",
-      "test_quota_settings.js",
-      "windows/CHANGELOG.md",
-      "windows/README.md",
-      "windows/app/VERSION",
-      "windows/app/app.js",
-      "windows/app/index.html",
-      "windows/app/style.css"
-    ],
-    "artifact_count": 9,
-    "artifacts": "ZIP CRC and per-file hashes passed",
-    "backend_tests": "not rerun; no Python backend changes",
-    "remote_ci": "not rerun here; earlier Mac3.13 failure pending publishing task",
-    "Agy_review_recorded": true
+    "evidence_scope": "Regular suite passed; after native PTY fixture restoration all 10 lifecycle cases and loopback bind passed; exact full run required again in remote CI"
   }
 }
