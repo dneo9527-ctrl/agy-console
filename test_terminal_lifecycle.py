@@ -151,7 +151,9 @@ class TerminalLifecycleTests(unittest.TestCase):
             if check():
                 return
             time.sleep(.03)
-        self.fail(message + '\n' + '\n'.join(p.output.decode(errors='replace') for p in self.terminals))
+        self.fail(message + '\n' + '\n'.join(
+            'PTY pid=' + str(p.pid) + ' exit=' + str(p.poll()) + '\n' + p.output.decode(errors='replace')
+            for p in self.terminals))
 
     def request(self, method, path, body=None):
         client = http.client.HTTPConnection('127.0.0.1', self.port, timeout=1)

@@ -31,10 +31,23 @@ def main():
         (test_root/'release-source.json').write_text('{"repository":"","channel":"preview"}\n',encoding='utf-8')
         result['test_configuration'] = 'Deployment repository blanked in disposable copy; program bytes unchanged'
         suites = sorted(p.name for p in ROOT.glob('test_*.py'))
-        command = [sys.executable, '-B', '-m', 'unittest', '-v'] + suites
-        proc = subprocess.run(command, cwd=test_root, env=env, capture_output=True, text=True, timeout=600)
-        result['python'] = {'exit_code': proc.returncode, 'suites': len(suites), 'output': proc.stdout, 'error': proc.stderr}
-        failed |= bool(proc.returncode)
+        # PTY fork fixtures must start in a fresh interpreter, before importing
+        # server tests that create threads or initialize platform system libraries.
+        # All suites still run; keep each process's full result rather than retrying.
+        terminal = ['test_terminal_lifecycle.py'] if 'test_terminal_lifecycle.py' in suites else []
+        groups = [terminal, [name for name in suites if name not in terminal]]
+        runs = []
+        for group in groups:
+            if not group:
+                continue
+            command = [sys.executable, '-B', '-m', 'unittest', '-v'] + group
+            proc = subprocess.run(command, cwd=test_root, env=env, capture_output=True, text=True, timeout=600)
+            runs.append({'suites': group, 'exit_code': proc.returncode, 'output': proc.stdout, 'error': proc.stderr})
+        python_exit = int(any(run['exit_code'] for run in runs))
+        result['python'] = {'exit_code': python_exit, 'suites': len(suites), 'runs': runs,
+                            'output': ''.join(run['output'] for run in runs),
+                            'error': ''.join(run['error'] for run in runs)}
+        failed |= bool(python_exit)
         node = shutil.which('node')
         if not node:
             result['javascript'] = [{'exit_code': 1, 'error': 'Node.js is required; not skipped silently'}]
