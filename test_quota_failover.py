@@ -253,6 +253,66 @@ emit({'event':'result','result':{'status':'SUCCESS','response':'done','conversat
         turn['expected_agy_id']='99999999-2222-3333-4444-555555555555'
         self.assertFalse(guard.current_quota_rejection(turn,self.app.activity.root))
 
+    def test_official_rejection_ignores_later_task_in_same_persistent_session(self):
+        conv,_=self.prepare()
+        error='Individual quota reached. Resets in 1h.'
+        db=self.app.activity.root/'conversations'/(SESSION+'.db')
+        with sqlite3.connect(db) as connection:
+            connection.execute('CREATE TABLE steps (idx INTEGER,step_type INTEGER,status INTEGER,step_payload BLOB)')
+            connection.executemany('INSERT INTO steps VALUES (?,?,?,?)',[
+                (10,14,3,b'work'), (11,101,3,b'system'), (12,23,3,b'checkpoint'),
+                (13,132,7,b'read-only denial'), (14,17,3,error.encode()),
+                # A later task is already present in the same persistent Agy
+                # conversation. It must not contaminate this attempt's proof.
+                (15,14,3,b'later work'), (16,101,3,b'later system')])
+        guard=AttemptGuard()
+        for event in [
+            {'event':'init','conversation_id':SESSION},
+            {'event':'step_update','step_update':{'step_index':10,'step_type':'user_input'}},
+            {'event':'step_update','step_update':{'step_index':11,'step_type':'system_message'}},
+            {'event':'step_update','step_update':{'step_index':12,'step_type':'checkpoint'}},
+            {'event':'step_update','step_update':{'step_index':13,'step_type':'tool','tool_name':'read_file'}},
+            {'event':'result','result':{'status':'ERROR','conversation_id':SESSION,'error':error,'response':'',
+                                        'denied_actions':[{'action':'read_file'}]}}]:
+            guard.observe(event)
+        turn={'expected_agy_id':SESSION,'prompt':'work'}
+        self.assertTrue(guard.official_rejection(turn,self.app.activity.root))
+
+    def test_read_denial_does_not_turn_historical_quota_into_current_rejection(self):
+        conv,_=self.prepare()
+        error='Individual quota reached. Resets in 1h.'
+        db=self.app.activity.root/'conversations'/(SESSION+'.db')
+        with sqlite3.connect(db) as connection:
+            connection.execute('CREATE TABLE steps (idx INTEGER,step_type INTEGER,status INTEGER,step_payload BLOB)')
+            connection.executemany('INSERT INTO steps VALUES (?,?,?,?)',[
+                (1,17,3,error.encode()),(10,14,3,b'/plan work'),
+                (11,101,3,b'system'),(12,23,3,b'checkpoint'),(13,132,7,b'read_file denial')])
+        guard=AttemptGuard()
+        for event in [
+            {'event':'init','conversation_id':SESSION},
+            {'event':'step_update','step_update':{'step_index':10,'step_type':'user_input'}},
+            {'event':'step_update','step_update':{'step_index':11,'step_type':'system_message'}},
+            {'event':'step_update','step_update':{'step_index':12,'step_type':'checkpoint'}},
+            {'event':'step_update','step_update':{'step_index':13,'step_type':'tool','tool_name':'read_file','state':'ERROR'}},
+            {'event':'result','result':{'status':'ERROR','conversation_id':SESSION,'error':error,'response':'',
+                                        'denied_actions':[{'action':'read_file'}]}}]:
+            guard.observe(event)
+        turn={'expected_agy_id':SESSION,'prompt':'work'}
+        self.assertFalse(guard.current_quota_rejection(turn,self.app.activity.root))
+        self.assertFalse(guard.official_rejection(turn,self.app.activity.root))
+
+    def test_structured_write_denial_blocks_retry_without_stderr_marker(self):
+        guard=AttemptGuard()
+        error='Individual quota reached. Resets in 1h.'
+        for event in [
+            {'event':'init','conversation_id':SESSION},
+            {'event':'step_update','step_update':{'step_index':10,'step_type':'user_input'}},
+            {'event':'result','result':{'status':'ERROR','conversation_id':SESSION,'error':error,
+                                        'denied_actions':[{'action':'write_file'}]}}]:
+            guard.observe(event)
+        turn={'expected_agy_id':SESSION,'prompt':'work'}
+        self.assertFalse(guard.permits_retry(turn,3,False))
+
     def test_candidate_order_is_per_kind_and_persists(self):
         conv,account=self.prepare()
         self.app.set_model_order([ARGON,FLASH,SONNET],0)

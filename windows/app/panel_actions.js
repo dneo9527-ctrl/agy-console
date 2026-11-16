@@ -149,7 +149,7 @@ async function previewBackup(){
 function restoreBackupPreferences(value){
   if(!value?.settings)return;
   const settings=value.settings;
-  uiSettings={font:[14,16,18].includes(settings.font)?settings.font:14,idleMs:[4000,12000].includes(settings.idleMs)?settings.idleMs:12000,modelOrder:cleanModelOrder(settings.modelOrder)};
+  uiSettings={font:[14,16,18].includes(settings.font)?settings.font:14,idleMs:[4000,12000].includes(settings.idleMs)?settings.idleMs:12000,theme:typeof validThemes!=='undefined'&&validThemes.has(settings.theme)?settings.theme:'night',modelOrder:cleanModelOrder(settings.modelOrder)};
   historyPins=new Set((value.pins||[]).filter(x=>/^(?:panel:[a-f0-9]{32}|external:[a-f0-9-]{36})$/.test(x)));
   try{localStorage.setItem(uiSettingsKey,JSON.stringify(uiSettings));localStorage.setItem(historyPinsKey,JSON.stringify([...historyPins]));}
   catch(error){toast('数据已恢复，但浏览器未能保存部分显示设置。');}

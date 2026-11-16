@@ -1,11 +1,11 @@
-# Agy Console v0.1.0-preview.6 发布方案
+# Agy Console v0.1.0-preview.8 发布范围
 
-目标仓库：`dneo9527-ctrl/agy-console`。所有者已明确授权公开＋MIT。
+公开仓库 `dneo9527-ctrl/agy-console`，MIT，标签 `v0.1.0-preview.8`，标记预览版。
 
-标签 `v0.1.0-preview.6`，标记 prerelease，不设为稳定最新版。
+交付：干净源码 ZIP、Mac/Linux 源码预览完整包、Windows x64 原生安装向导与含固定运行时的便携完整包、Mac/Linux 四个目标的程序更新 ZIP、updates.json 与 SHA256SUMS。Windows 通过完整 setup.exe 或便携包升级；不在共享清单中投放可能跳过稳定启动器升级的 Windows 程序包。
 
-交付：Mac/Linux 需 Python 的源码预览包、Windows x64 含运行时便携预览包、五个平台程序更新 ZIP、聚合 updates.json 和 SHA256SUMS。完整包内置明确的公开仓库与 preview 通道，自动下载默认关闭。
+本版合并权限拒绝与历史额度错误隔离、五色主题、候补设置和配置传输改进，保留公开 .6 回环绑定与 .7 Windows 原生安装器、Job 管理和维护互斥。旧版本标签与附件保留。
 
-冻结开发输入的逐文件摘要保存在 developer-source.json。发布副本使用自绘 SVG、补全说明和依赖哈希，不复制现用服务或个人状态。附件按发布副本重建，源码、程序及发布配置可追溯。
+冻结输出摘要见 source-freeze.json。使用允许列表构建，不含 data、用户配置、官方登录或内部日志。准确提交的 CI、附件回下校验与升级验证结果见 Release；本机测试不能代替远端验收。
 
-验收依据：235项Python、30组JavaScript、7项框架行为与5平台客户端校验；正式远端检查与公开下载结果见本版本Release说明。Windows/Linux真实账号登录与模型调用、旧macOS及新Mac隔离首开、Apple公证未验收。
+未验证：Windows 用户硬件上的官方 CLI 登录/模型调用、SmartScreen/Defender 全环境、全新 Mac 隔离首开、旧系统实机、Apple 公证。Python 与第三方运行时保留各自许可。

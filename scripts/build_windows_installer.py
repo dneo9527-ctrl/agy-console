@@ -1,4 +1,4 @@
-"""Build a real Windows installer using Inno Setup and the verified .6 runtime."""
+"""Build a real Windows installer using Inno Setup and the verified .7 runtime."""
 import argparse
 import hashlib
 import json
@@ -14,8 +14,8 @@ import zipfile
 from common import ROOT, config, sha256
 from package_release import build
 
-CARRIER_URL = 'https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.6/AgyConsole-0.1.0-preview.6-windows-x64-preview.zip'
-CARRIER_SHA256 = '68ac082dbbf3d71e456966b284176551353df3bf2efd519ade363d19284a1226'
+CARRIER_URL = 'https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.7/AgyConsole-0.1.0-preview.7-windows-x64-preview.zip'
+CARRIER_SHA256 = 'a8574f901b58bc6574b51b1787381213410749569da801dd7d1eb163340a4d5b'
 
 
 def main():

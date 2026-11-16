@@ -213,8 +213,9 @@ class Console:
     def reconcile_recent_results(self):
         """Repair only proven API recovery; retain raw files and a state backup."""
         candidates=[(c,t) for c in self.state['conversations'] for t in c['turns']
-                    if t.get('status')=='failed' and t.get('exit_code')==0
-                    and t.get('kind','text')=='text' and t.get('response','').strip()
+                    if t.get('status')=='failed' and t.get('exit_code') in (0,1,3)
+                    and t.get('kind','text')=='text'
+                    and (t.get('response','').strip() or quota_rejection(t.get('error')))
                     and (str(t.get('error','')).startswith('API error') or quota_rejection(t.get('error')))
                     and not t.get('session_mismatch')]
         candidates.sort(key=lambda pair:pair[1].get('created_at',''),reverse=True)
@@ -229,8 +230,7 @@ class Console:
                 if not err.is_file() or err.is_symlink() or err.stat().st_size>1024*1024:
                     continue
                 diagnostic=err.read_text(encoding='utf-8',errors='replace')
-                if re.search(r'soft.denied|auto.denied|permission denied|tool.{0,80}\bdenied\b',diagnostic,re.I):
-                    continue
+                denial = bool(re.search(r'soft.denied|auto.denied|permission denied|tool.{0,80}\bdenied\b',diagnostic,re.I))
                 evidence=TurnEvidence();result={};valid=True
                 with raw.open(encoding='utf-8') as stream:
                     for index,line in enumerate(stream):
@@ -246,7 +246,10 @@ class Console:
                 if turn.get('started_at') and turn.get('ended_at'):
                     window = tuple(datetime.fromisoformat(turn[key].replace('Z', '+00:00')).timestamp()
                                    for key in ('started_at', 'ended_at'))
-                proof=evidence.prove_historical_error(result,root=self.activity.root,time_window=window)
+                proof=(evidence.prove_historical_error(result,root=self.activity.root,time_window=window)
+                       if turn.get('exit_code')==0 and not denial else None)
+                if proof is None and quota_rejection(result.get('error')):
+                    proof=evidence.prove_denied_historical_error(result,root=self.activity.root)
                 if proof:repaired.append((turn,proof,evidence.current_usage()))
             except (OSError,ValueError,TypeError,AttributeError):
                 continue
@@ -257,6 +260,15 @@ class Console:
                 fd=os.open(str(target),os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
                 with os.fdopen(fd,'wb') as stream:stream.write(self.file.read_bytes())
             for turn,proof,usage in repaired:
+                if proof['source']=='official_tool_denial':
+                    message='工具权限被拒绝：'+', '.join(proof['denied_tools'])+'。本轮未完成；CLI 附带的旧额度错误已隔离。'
+                    turn.update(status_before_recheck=turn['status'],error_before_recheck=turn['error'],
+                                error=message,failure_evidence=proof,rechecked_at=now(),
+                                fallback_notice='本轮工具被拒绝，未自动切换或重跑；请先检查所需权限。')
+                    if turn.get('attempts'):
+                        attempt=turn['attempts'][-1]
+                        attempt.update(error_before_recheck=attempt.get('error'),error=message)
+                    continue
                 turn.update(status_before_recheck=turn['status'],error_before_recheck=turn['error'],
                             status='completed',error='',completion_evidence=proof,rechecked_at=now())
                 turn.pop('fallback_notice', None)
@@ -953,7 +965,7 @@ class Console:
                                  'session_groups': True, 'conversation_versions': True, 'proxy_environment': True,
                                   'gpt_collaboration': True, 'current_turn_results': True, 'global_model': True,
                                   'collaboration_history': True, 'verified_api_recovery': True,
-                                  'quota_failover': True, 'software_updates': True, 'model_resolution': True, 'collaboration_results': True, 'queue_priority': True, 'foreground_reload': bool(self.reload_callback)},
+                                  'quota_failover': True, 'software_updates': True, 'configuration_transfer': True, 'model_resolution': True, 'collaboration_results': True, 'queue_priority': True, 'foreground_reload': bool(self.reload_callback)},
                     'instance_id': self.instance_id, 'reloading': self.reloading, 'maintenance': self.maintenance,
                     'network': getattr(self, 'network', {'source': 'inherited'}),
                     'uptime': round(time.monotonic() - self.started), 'active_tasks': active,
@@ -1398,6 +1410,11 @@ class Console:
                     denial = stderr_denied
                     if turn['status'] not in {'cancelled', 'cancelling'}:
                         confirmation = None
+                        denied_proof = (evidence.prove_denied_historical_error(result, root=self.activity.root)
+                                        if code in (0,1,3) and quota_rejection(result.get('error'))
+                                        and not turn.get('session_mismatch') else None)
+                        if denied_proof:
+                            turn['failure_evidence'] = denied_proof
                         if code == 0 and not denial and not turn.get('session_mismatch'):
                             confirmation = evidence.prove_historical_error(result, root=self.activity.root,
                                                                             time_window=(started_wall, time.time()))
@@ -1412,6 +1429,9 @@ class Console:
                             turn['compaction_evidence'] = evidence.compaction_checkpoint(result.get('conversation_id')) if success else None
                         terminal_error = '' if success else str(('Agy 返回了不同的会话，本次未确认续接；原绑定已保留。' if turn.get('session_mismatch') else '') or result.get('error') or diagnostic[-1200:] or
                                                               ('未取得实际图片文件，请查看回复中的生成失败原因。' if image_task else '未取得完整的成功回复。'))
+                        if denied_proof:
+                            terminal_error='工具权限被拒绝：'+', '.join(denied_proof['denied_tools'])+'。本轮未完成；CLI 附带的旧额度错误已隔离。'
+                            turn['fallback_notice']='本轮工具被拒绝，未自动切换或重跑；请先检查所需权限。'
                     turn['exit_code'] = code
             except Exception as exc:
                 if proc and proc.poll() is None:
@@ -1458,7 +1478,7 @@ class Console:
                     account_now = self.health.get('account') or {}
                     same_account = (account_now.get('state') == 'known' and account_now.get('email')
                                     and account_now.get('email') == (turn.get('account_check') or {}).get('email'))
-                    eligible = (not self.stopping and turn['status'] == 'failed' and turn.get('fallback_enabled')
+                    eligible = (not self.stopping and current_quota and turn['status'] == 'failed' and turn.get('fallback_enabled')
                                 and len(turn.get('attempts', [])) == 1 and same_account
                                 and guard.permits_retry(turn, turn.get('exit_code'), stderr_denied)
                                 and guard.official_rejection(turn, self.activity.root))

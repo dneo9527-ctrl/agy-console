@@ -143,6 +143,89 @@ class HistoricalQuotaArtifactTests(unittest.TestCase):
         self.assertEqual((folder / 'stdout.ndjson').read_text(), raw)
         self.assertEqual(app.reconcile_recent_results(), 0)
 
+    def denial_case(self):
+        self.result.update(error=ERROR,response='',denied_actions=[{'action':'read_file'}])
+        self.wire=[]
+        for idx,kind in ((41,'user_input'),(42,'system_message'),(43,'checkpoint'),(44,'agent_response'),(45,'tool')):
+            step=dict(conversation_id=SID,step_index=idx,step_type=kind,state='ERROR' if kind=='tool' else 'DONE')
+            if kind=='tool':
+                step.update(tool_name='read_file',tool_info={'name':'read_file','error':{'message':'permission denied'}})
+            self.wire.append({'event':'step_update','step_update':step})
+        tool=proto((1,132),(4,7),(5,proto((4,proto((2,b'read_file'))))))
+        self.connection.execute('DELETE FROM steps')
+        self.connection.executemany('INSERT INTO steps VALUES (?,?,?,?)',[
+            (40,17,3,ERROR.encode()),(41,14,3,b'/plan work'),(42,101,3,b'system'),
+            (43,23,3,b'checkpoint'),(44,15,3,self.reply_payload('')),(45,132,7,tool)])
+        self.connection.commit()
+
+    def denied_proof(self):
+        evidence=TurnEvidence()
+        for event in self.wire:evidence.observe(event)
+        return evidence.prove_denied_historical_error(self.result,self.root)
+
+    def test_permission_denial_explains_old_quota_without_success_or_replay(self):
+        self.denial_case()
+        proof=self.denied_proof()
+        self.assertEqual(proof['source'],'official_tool_denial')
+        self.assertEqual(proof['historical_error_step'],40)
+        self.assertEqual(proof['denied_tools'],['read_file'])
+        evidence=TurnEvidence()
+        for event in self.wire:evidence.observe(event)
+        self.assertIsNone(evidence.prove_historical_error(self.result,self.root))
+        self.connection.execute('INSERT INTO steps VALUES (46,17,3,?)',(ERROR.encode(),))
+        self.connection.commit()
+        self.assertIsNone(self.denied_proof(),'a genuine current quota error is never cleared')
+
+    def test_denial_explanation_requires_matching_old_error_and_full_current_steps(self):
+        self.denial_case()
+        self.connection.execute('DELETE FROM steps WHERE idx=40');self.connection.commit()
+        self.assertIsNone(self.denied_proof())
+        self.denial_case()
+        self.connection.execute('UPDATE steps SET step_payload=? WHERE idx=45',(b'unknown',));self.connection.commit()
+        self.assertIsNone(self.denied_proof())
+        self.denial_case()
+        self.wire[3]['step_update']['text_delta']='partial output'
+        self.assertIsNone(self.denied_proof())
+
+    def test_command_action_alias_explains_denial_without_authorizing_replay(self):
+        from quota_failover import AttemptGuard
+        self.denial_case()
+        self.result['denied_actions']=[{'action':'command','display_name':'Bash'}]
+        self.wire[-1]['step_update'].update(tool_name='run_command',
+            tool_info={'name':'run_command','error':{'message':'permission denied'}})
+        tool=proto((1,132),(4,7),(5,proto((4,proto((2,b'run_command'))))))
+        self.connection.execute('UPDATE steps SET step_payload=? WHERE idx=45',(tool,))
+        self.connection.commit()
+        proof=self.denied_proof()
+        self.assertEqual(proof['source'],'official_tool_denial')
+        self.assertEqual(proof['denied_tools'],['run_command'])
+        guard=AttemptGuard()
+        for event in [{'event':'init','conversation_id':SID}]+self.wire+[
+                {'event':'result','result':self.result}]:guard.observe(event)
+        turn={'expected_agy_id':SID,'prompt':'work'}
+        self.assertFalse(guard.current_quota_rejection(turn,self.root))
+        self.assertFalse(guard.official_rejection(turn,self.root))
+        self.assertFalse(guard.permits_retry(turn,3,False))
+
+    def test_denial_backfill_preserves_failure_and_raw_files(self):
+        self.denial_case()
+        from server import Console
+        from types import SimpleNamespace
+        data=self.root/'backfill-denial';folder=data/'runs'/('d'*32);folder.mkdir(parents=True)
+        turn=dict(id='d'*32,status='failed',exit_code=3,kind='text',response='',error=ERROR,agy_id=SID,
+                  created_at='2026-11-16T08:00:00Z',fallback_notice='not confirmed',attempts=[dict(status='failed',error=ERROR)])
+        raw='\n'.join(json.dumps(e) for e in self.wire+[{'event':'result','result':self.result}])
+        (folder/'stdout.ndjson').write_text(raw);(folder/'stderr.log').write_text(ERROR)
+        app=Console.__new__(Console);app.data=data;app.file=data/'state.json';app.activity=SimpleNamespace(root=self.root)
+        app.state={'conversations':[{'id':'c'*32,'agy_id':SID,'turns':[turn]}]};app.file.write_text(json.dumps(app.state))
+        self.assertEqual(app.reconcile_recent_results(),1)
+        self.assertEqual(turn['status'],'failed')
+        self.assertIn('工具权限被拒绝',turn['error'])
+        self.assertEqual(turn['failure_evidence']['raw_cli_error'],ERROR)
+        self.assertEqual(turn['attempts'][0]['status'],'failed')
+        self.assertEqual((folder/'stdout.ndjson').read_text(),raw)
+        self.assertEqual(app.reconcile_recent_results(),0)
+
     def test_worker_finishes_artifact_once_without_blocking_or_switching_healthy_model(self):
         self.artifact_case()
         from server import Console, BUSY, DEFAULT_MODEL

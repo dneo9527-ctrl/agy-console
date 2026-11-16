@@ -2,6 +2,7 @@
 import copy
 import http.client
 import json
+import tempfile
 import threading
 import time
 import unittest
@@ -9,6 +10,7 @@ from unittest.mock import patch
 from pathlib import Path
 from panel_backups import validate_configuration
 from server import Console,Handler,ThreadingHTTPServer,ConflictError
+from software_updates import SoftwareUpdates
 import test_codex_bridge as binding_fixtures
 THREAD=binding_fixtures.THREAD
 
@@ -17,6 +19,21 @@ ARGON='gemini-4-argon-high'
 
 class ConfigurationTests(unittest.TestCase):
     def setUp(self):
+        # Configuration tests own their updater source and transport.  The
+        # installed application's release-source.json may enable checks, but
+        # must never start real network work or alter these fixtures' timing.
+        self.updater_temp=tempfile.TemporaryDirectory()
+        self.addCleanup(self.updater_temp.cleanup)
+        self.updater_root=Path(self.updater_temp.name)
+        (self.updater_root/'VERSION').write_text('0.1.0-preview.1')
+        self.updaters=[]
+        def make_updater(_root,data,*args,**kwargs):
+            kwargs['fetch']=self.reject_update_network
+            manager=SoftwareUpdates(self.updater_root,data,*args,**kwargs)
+            self.updaters.append(manager)
+            return manager
+        factory=patch('server.SoftwareUpdates',side_effect=make_updater)
+        factory.start();self.addCleanup(factory.stop)
         binding_fixtures.BindingTests.setUp(self)
         deadline=time.monotonic()+4
         while time.monotonic()<deadline:
@@ -29,7 +46,15 @@ class ConfigurationTests(unittest.TestCase):
             gpt_collaboration=False,auto_open_activity=False)
         self.app.state['preferred_model']=FLASH
         self.app.save(self.conv)
-    tearDown=binding_fixtures.BindingTests.tearDown
+    def tearDown(self):
+        self.app.close()
+        for manager in self.updaters:
+            manager.close()
+            if manager.thread:manager.thread.join(3)
+        self.temp.cleanup()
+
+    def reject_update_network(self,*_args):
+        self.fail('Configuration tests must not contact an update server')
 
     def document(self):return self.app.export_configuration({'font':18,'idleMs':4000,'credentials':'SECRET','draft':'SECRET'},self.conv['id'])
     def preview(self,doc,window=True):return self.app.preview_configuration(doc,self.conv['id'],window)
@@ -113,9 +138,10 @@ class ConfigurationTests(unittest.TestCase):
         self.app.software_updates.requested=None
 
     def test_automatic_check_is_reserved_before_import_can_enter(self):
-        from software_updates import SoftwareUpdates
         previous=self.app.software_updates;previous.close();previous.thread.join(2)
-        manager=SoftwareUpdates(Path(__file__).parent,self.app.data,idle=lambda:True,start=False)
+        manager=SoftwareUpdates(self.updater_root,self.app.data,idle=lambda:True,
+                                fetch=self.reject_update_network,start=False)
+        self.updaters.append(manager)
         manager.preferences['repository']='fixture/repo';self.app.software_updates=manager
         started=threading.Event();finish=threading.Event()
         def fake_check():

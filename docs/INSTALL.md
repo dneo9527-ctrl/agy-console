@@ -10,7 +10,7 @@ macOS/Linux 包是源码预览，需要 Python 3.9+。完整解压到自己的�
 
 ## Windows 安装版与便携包
 
-`.7` 提供每用户免管理员 setup.exe，创建桌面/开始菜单与首次使用指南；官方 CLI 仍需本人安装登录。安装版 data 独立于程序目录，升级/卸载保留；运行中的本工具会阻止维护，不会被安装器强杀。未知便携目录不能直接覆盖为安装版。具体入口、路径和边界见 [Windows 说明](../windows/README.md)。
+`.8` 保留并提供每用户免管理员 setup.exe，创建桌面/开始菜单与首次使用指南；官方 CLI 仍需本人安装登录。安装版 data 独立于程序目录，升级/卸载保留；运行中的本工具会阻止维护，不会被安装器强杀。未知便携目录不能直接覆盖为安装版。具体入口、路径和边界见 [Windows 说明](../windows/README.md)。
 
 目标为 Windows 10 1809+/Windows 11 x64。完整解压到可写目录，避免 Program Files 和 ZIP 内直接运行。包内含 Python、pywinpty、psutil 和各自许可，无需安装 Python。
 

@@ -9,4 +9,12 @@ assert.ok(network.includes('连接模型服务超时'));assert.ok(network.includ
 const capacity=ctx.taskErrorHTML('API error (attempt 1): UNAVAILABLE (code 503): No capacity available <script>');
 assert.ok(capacity.includes('模型暂时繁忙（503）'));assert.ok(capacity.includes('<details>'));assert.ok(!capacity.includes('<script>'));
 assert.equal(ctx.taskErrorHTML(''),'');
+const oldQuota=ctx.taskErrorHTML('工具权限被拒绝：read_file',{
+  source:'official_tool_denial',historical_error_step:134,raw_cli_error:'Individual quota reached <script>'
+});
+assert.ok(oldQuota.includes('<strong>工具权限被拒绝</strong>'));
+assert.ok(oldQuota.includes('历史步骤 134'));
+assert.ok(oldQuota.indexOf('Individual quota reached')>oldQuota.indexOf('<details>'));
+assert.ok(!oldQuota.includes('<script>'));
+assert.ok(!oldQuota.includes('模型暂时繁忙'));
 console.log('Task feedback passed: queue position is distinct from execution, denied tools remain incomplete, raw diagnostics escaped.');

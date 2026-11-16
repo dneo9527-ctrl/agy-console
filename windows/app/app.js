@@ -78,13 +78,21 @@ let collaborationAudit={cid:null,sequence:0,records:[],before:null,hasOlder:fals
 let queuePending=false,reloadBusy=false,lastServiceInstance=null,idlePolls=0;
 let autoOpenPending=false;
 const uiSettingsKey='agy-ui-settings-v1';
+const themePresets={
+  obsidian:{label:'黑曜',vars:{bg:'#0b0d10',side:'#080a0d',panel:'#151922',line:'#252a35',text:'#f0f2f7',muted:'#9aa3b5',accent:'#aeb8ff',green:'#82d0aa'}},
+  night:{label:'深夜',vars:{bg:'#171920',side:'#111319',panel:'#20232d',line:'#2c2f3b',text:'#eef0f8',muted:'#9096a9',accent:'#a7adff',green:'#81cfab'}},
+  graphite:{label:'石墨',vars:{bg:'#202124',side:'#17181a',panel:'#2a2c30',line:'#3b3e44',text:'#f2f3f5',muted:'#a3a7af',accent:'#b8c7ff',green:'#8fd4b3'}},
+  ocean:{label:'蓝灰',vars:{bg:'#121b27',side:'#0c141f',panel:'#1b293a',line:'#30445e',text:'#edf4ff',muted:'#9eafc6',accent:'#9fc5ff',green:'#82d6b8'}},
+  warm:{label:'暖灰',vars:{bg:'#211f1f',side:'#171514',panel:'#302b2b',line:'#493e3d',text:'#faf1ed',muted:'#b9a8a2',accent:'#e3b8ad',green:'#9bcfb2'}}
+};
+const validThemes=new Set(Object.keys(themePresets));
 function cleanModelOrder(value){return Array.isArray(value)?[...new Set(value.filter(id=>typeof id==='string'&&/^[a-z0-9][a-z0-9_.-]{0,99}$/.test(id)))].slice(0,128):[];}
-function loadUISettings(){try{const value=JSON.parse(localStorage.getItem(uiSettingsKey)||'{}');return {font:[14,16,18].includes(value.font)?value.font:14,idleMs:[4000,12000].includes(value.idleMs)?value.idleMs:12000,modelOrder:cleanModelOrder(value.modelOrder)};}catch(e){return {font:14,idleMs:12000,modelOrder:[]};}}
+function loadUISettings(){try{const value=JSON.parse(localStorage.getItem(uiSettingsKey)||'{}');return {font:[14,16,18].includes(value.font)?value.font:14,idleMs:[4000,12000].includes(value.idleMs)?value.idleMs:12000,theme:validThemes.has(value.theme)?value.theme:'night',modelOrder:cleanModelOrder(value.modelOrder)};}catch(e){return {font:14,idleMs:12000,theme:'night',modelOrder:[]};}}
 let uiSettings=loadUISettings();
 let modelOrderExpanded=false;
 let settingsInsightsExpanded=false,settingsInsights={key:null,sequence:0,data:null,error:'',pending:false};
-function applyUISettings(){document.documentElement.style.setProperty('--chat-font-size',uiSettings.font+'px');}
-function saveUISetting(name,value){if(name==='font'&&[14,16,18].includes(value)||name==='idleMs'&&[4000,12000].includes(value))uiSettings[name]=value;else return;
+function applyUISettings(){const theme=themePresets[uiSettings.theme]||themePresets.night;for(const [name,value] of Object.entries(theme.vars))document.documentElement.style.setProperty('--'+name,value);if(document.documentElement.dataset)document.documentElement.dataset.theme=uiSettings.theme;document.documentElement.style.setProperty('--chat-font-size',uiSettings.font+'px');}
+function saveUISetting(name,value){if(name==='font'&&[14,16,18].includes(value)||name==='idleMs'&&[4000,12000].includes(value)||name==='theme'&&validThemes.has(value))uiSettings[name]=value;else return;
   try{localStorage.setItem(uiSettingsKey,JSON.stringify(uiSettings));}catch(e){toast('已应用，但浏览器未能保存设置。');}applyUISettings();renderSettings();if(name==='idleMs')startPolling();}
 function settingsOwner(){return viewMode==='panel'?conversationMeta(activeId):fixedOwnerConversation();}
 function renderSettings(){
@@ -99,6 +107,7 @@ function renderSettings(){
   autoOpen.setAttribute('aria-checked',String(owner?.auto_open_activity!==false));autoOpen.textContent=!autoSupported?'待更新':autoOpenPending?'保存中…':owner?.auto_open_activity===false?'关':'开';
   document.querySelectorAll('[data-font-size]').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.fontSize)===uiSettings.font)));
   document.querySelectorAll('[data-idle-ms]').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.idleMs)===uiSettings.idleMs)));
+  document.querySelectorAll('[data-theme-choice]').forEach(b=>{if(b.dataset&&b.dataset.themeChoice)b.setAttribute('aria-pressed',String(b.dataset.themeChoice===uiSettings.theme));});
   renderGlobalModelSettings();
   $('settings-reload-state').textContent=reloadBusy?'正在保存并加载更新…':!snapshot.service?.features?.foreground_reload?'首次升级需重开原终端':snapshot.service.can_reload?'空闲，可在当前终端原地加载':'等待任务与账号检查结束';
   renderFallbackSettings();
@@ -142,7 +151,7 @@ function moveModelOrder(id,direction){
   [groups[index],groups[target]]=[groups[target],groups[index]];const ids=groups.flatMap(g=>g.variants.map(m=>m.id)),known=new Set(ids),scroll=$('settings-model-order-list').scrollTop;
   saveModelOrder([...ids,...uiSettings.modelOrder.filter(key=>!known.has(key))]);$('settings-model-order-list').scrollTop=scroll;
 }
-let fallbackExpanded=false,fallbackSaving=false,fallbackScopeId='';
+let fallbackExpanded=false,fallbackSaving=false,fallbackScopeId='',fallbackAvailableExpanded=false;
 function fallbackView(){
   const owner=settingsOwner()||conversationMeta(fallbackScopeId),kind=$('fallback-kind').value==='image'?'image':'text';
   return {owner,kind,settings:owner?.fallback_preferences?.[kind]||{enabled:true}};
@@ -179,21 +188,28 @@ function renderFallbackSettings(){
   panel.hidden=!fallbackExpanded;$('fallback-expand').setAttribute('aria-expanded',String(fallbackExpanded));
   $('fallback-expand').textContent=fallbackExpanded?'收起':'配置';
   $('fallback-summary').textContent=!supported?'加载新版后台后可用':!owner?'按聊天配置 · 文字与生图独立':(settings.enabled?'已开启':'已关闭')+' · '+(kind==='text'?'文字':'生图')+' · '+(Array.isArray(settings.models)?'自选候补':'默认候补');
+  $('fallback-status-chip').textContent=!supported?'需更新':!owner?'未选择聊天':settings.enabled?'已开启':'已关闭';
+  if(typeof document!=='undefined')document.querySelectorAll('[data-fallback-kind]').forEach(button=>{if(button.dataset&&button.dataset.fallbackKind)button.setAttribute('aria-pressed',String(button.dataset.fallbackKind===kind));});
   if(!fallbackExpanded)return;
   const editable=!!owner&&supported&&online&&!fallbackSaving;
   const button=$('fallback-enabled');button.disabled=!editable;button.setAttribute('aria-checked',String(!!owner&&settings.enabled));button.textContent=fallbackSaving?'保存中…':!owner?'—':settings.enabled?'开':'关';
   $('fallback-kind').disabled=fallbackSaving;$('fallback-reset').disabled=!editable;
-  if(!owner||!supported){$('fallback-note').textContent=!supported?'当前后台不支持保存候补，请加载新版后台。':'先选择聊天，再设置文字或生图候补。';$('fallback-models').innerHTML='';$('fallback-status').textContent='尚未修改任何配置';return;}
+  if(!owner||!supported){$('fallback-note').textContent=!supported?'当前后台不支持保存候补，请加载新版后台。':'先选择聊天，再设置文字或生图候补。';$('fallback-models').innerHTML='';$('fallback-available').innerHTML='';$('fallback-add-toggle').hidden=true;$('fallback-status').textContent='尚未修改任何配置';return;}
   const candidates=fallbackCandidates(owner,kind,settings),groups=fallbackModelGroups(owner,kind,settings);
   const count=groups.filter(g=>g.variants.some(m=>candidates.includes(m.id))).length;
-  $('fallback-note').textContent=kind==='image'?'用 ↑↓ 调整生图候补顺序；仅勾选的模型参与，出图能力需确认。':'当前模型可用时继续使用；额度用完按编号接替。用 ↑↓ 调整顺序。';
-  let candidateIndex=0;
-  const html=groups.map(g=>{
+  $('fallback-note').textContent=kind==='image'?'仅勾选有生图能力的模型；额度用完后按编号接替。':'当前模型可用时继续使用；额度用完后按编号接替。';
+  let candidateIndex=0;const selectedRows=[];const availableRows=[];
+  groups.forEach(g=>{
     const chosen=g.variants.find(m=>candidates.includes(m.id));
     const number=chosen?++candidateIndex:null;
-    return '<div class="fallback-model-row"><label><b class="order-number">'+(number||'—')+'</b><input type="checkbox" data-fallback-family="'+escape(g.key)+'" '+(chosen?'checked ':'')+(!editable?'disabled ':'')+'>'+escape(g.label)+'</label><select aria-label="'+escape(g.label)+' 候补档位" data-fallback-tier="'+escape(g.key)+'" '+(!chosen||!editable?'disabled':'')+'>'+g.variants.map(m=>'<option value="'+escape(m.id)+'"'+(m.id===chosen?.id?' selected':'')+'>'+escape(modelEffortLabels[m.effort]||'默认档位')+'</option>').join('')+'</select><div class="fallback-arrows"><button type="button" data-fallback-move="up" data-fallback-id="'+escape(g.key)+'" aria-label="上移 '+escape(g.label)+'" '+(!number||number===1||!editable?'disabled':'')+'>↑</button><button type="button" data-fallback-move="down" data-fallback-id="'+escape(g.key)+'" aria-label="下移 '+escape(g.label)+'" '+(!number||number===count||!editable?'disabled':'')+'>↓</button></div></div>';
-  }).join('');
-  if($('fallback-models').innerHTML!==html)$('fallback-models').innerHTML=html;
+    const row='<div class="fallback-model-row '+(chosen?'is-selected':'is-available')+'"><label class="fallback-model-label"><b class="order-number">'+(number||'—')+'</b><input type="checkbox" data-fallback-family="'+escape(g.key)+'" '+(chosen?'checked ':'')+(!editable?'disabled ':'')+'><span>'+escape(g.label)+'</span></label><select aria-label="'+escape(g.label)+' 候补档位" data-fallback-tier="'+escape(g.key)+'" '+(!chosen||!editable?'disabled':'')+'>'+g.variants.map(m=>'<option value="'+escape(m.id)+'"'+(m.id===chosen?.id?' selected':'')+'>'+escape(modelEffortLabels[m.effort]||'默认档位')+'</option>').join('')+'</select><div class="fallback-arrows"><button type="button" data-fallback-move="up" data-fallback-id="'+escape(g.key)+'" aria-label="上移 '+escape(g.label)+'" '+(!number||number===1||!editable?'disabled':'')+'>↑</button><button type="button" data-fallback-move="down" data-fallback-id="'+escape(g.key)+'" aria-label="下移 '+escape(g.label)+'" '+(!number||number===count||!editable?'disabled':'')+'>↓</button></div></div>';
+    (chosen?selectedRows:availableRows).push(row);
+  });
+  const selectedHtml=selectedRows.length?'<div class="fallback-list-label">已启用候补 · ↑↓ 调整顺序</div>'+selectedRows.join(''):'<p class="fallback-empty">还没有候补模型，请从下方添加。</p>';
+  const availableHtml=availableRows.length?'<div class="fallback-list-label fallback-list-label-muted">可选模型</div>'+availableRows.join(''):'<p class="fallback-empty">没有更多可选模型。</p>';
+  if($('fallback-models').innerHTML!==selectedHtml)$('fallback-models').innerHTML=selectedHtml;
+  if($('fallback-available').innerHTML!==availableHtml)$('fallback-available').innerHTML=availableHtml;
+  $('fallback-add-toggle').hidden=!availableRows.length;$('fallback-add-toggle').setAttribute('aria-expanded',String(fallbackAvailableExpanded));$('fallback-add-toggle').textContent=fallbackAvailableExpanded?'收起可选模型':'＋ 添加模型';$('fallback-available').hidden=!fallbackAvailableExpanded;
   $('fallback-status').textContent=(!online?'服务已断开 · 仅查看':fallbackSaving?'保存中…':candidateIndex+' 个候补 · '+(Array.isArray(settings.models)?'已保存顺序':'默认顺序'))+' · '+(kind==='text'?'文字':'生图');
 }
 async function saveFallbackSettings(value){
@@ -1111,8 +1127,9 @@ async function reloadService(){
     toast('尚未确认重载完成；草稿已保留，请检查原终端后刷新。');
   }catch(e){toast(e.message);}finally{reloadBusy=false;startPolling();render();}
 }
-function taskErrorHTML(error){
+function taskErrorHTML(error,evidence=null){
   if(!error)return '';
+  if(evidence?.source==='official_tool_denial')return `<div class="error-box"><strong>工具权限被拒绝</strong><p>本轮未完成，请检查所需工具的授权。CLI 附带了旧会话的额度报错，已隔离；本轮未因此切换模型或重跑。</p><details><summary>查看诊断详情</summary><pre>${escape(error)}\n\n旧额度诊断（历史步骤 ${Number(evidence.historical_error_step)||0}）：\n${escape(evidence.raw_cli_error||'')}</pre></details></div>`;
   if(/soft.denied|auto-denied|permission denied|headless mode cannot prompt/i.test(error))return `<div class="error-box"><strong>所需工具需要授权</strong><p>Agy 未获准执行所需工具，本次任务未完成。可由当前 Codex 执行工具后交给 Agy 复核。</p><details><summary>查看原始错误</summary><pre>${escape(error)}</pre></details></div>`;
   if(/\b503\b|No capacity available/i.test(error))return `<div class="error-box"><strong>模型暂时繁忙（503）</strong><p>服务端暂无可用容量；这与账号额度不同。稍后重试，或选择其他可用模型。</p><details><summary>查看原始错误</summary><pre>${escape(error)}</pre></details></div>`;
   if(/i\/o timeout|connection (?:timeout|reset)|deadline exceeded/i.test(error))return `<div class="error-box"><strong>连接模型服务超时</strong><p>本轮未确认成功。请检查当前代理与网络，稳定后再重试。</p><details><summary>查看原始错误</summary><pre>${escape(error)}</pre></details></div>`;
@@ -1148,7 +1165,7 @@ function completionStatusLabel(turn){
   }
   return texts[turn.status]||turn.status;
 }
-function panelAssistantHTML(t){return `<article class="message assistant"><div class="message-label"><img src="/icon.svg" alt="">Antigravity <time>${escape(t.model)}</time></div><div class="message-body markdown">${t.response?markdown(t.response,t.id):turnImages(t).length?'':`<div class="waiting-text"><span>●</span> ${isBusy(t.status)?'正在等待助手回复…':'没有收到回复'}</div>`}</div>${imageCards(t)}${taskErrorHTML(t.error)}${taskProgressHTML(t)}${modelChangesHTML(t)}${t.review?`<details class="inline-review"><summary>${escape(reviewLabel(t.review))}</summary>${reviewMarkup(t.review,true)}</details>`:""}<div class="message-footer"><span class="status-${t.status}">${completionStatusLabel(t)}</span>${t.elapsed?`<span>· ${duration(t.elapsed)}</span>`:''}${t.usage?.total_tokens?`<span data-tooltip="${escape(tokenUsageText(t))}">· ${t.usage_scope==='turn'?'本轮 ':t.usage_scope==='conversation'?'会话累计 ':'CLI 统计 '}${Number(t.usage.total_tokens).toLocaleString()} tokens</span>`:''}${typeof taskActionMarkup==='function'?taskActionMarkup(t):''}${t.response?`<button class="copy-reply" data-reply="${t.id}">复制回复</button>`:''}</div></article>`;}
+function panelAssistantHTML(t){return `<article class="message assistant"><div class="message-label"><img src="/icon.svg" alt="">Antigravity <time>${escape(t.model)}</time></div><div class="message-body markdown">${t.response?markdown(t.response,t.id):turnImages(t).length?'':`<div class="waiting-text"><span>●</span> ${isBusy(t.status)?'正在等待助手回复…':'没有收到回复'}</div>`}</div>${imageCards(t)}${taskErrorHTML(t.error,t.failure_evidence)}${taskProgressHTML(t)}${modelChangesHTML(t)}${t.review?`<details class="inline-review"><summary>${escape(reviewLabel(t.review))}</summary>${reviewMarkup(t.review,true)}</details>`:""}<div class="message-footer"><span class="status-${t.status}">${completionStatusLabel(t)}</span>${t.elapsed?`<span>· ${duration(t.elapsed)}</span>`:''}${t.usage?.total_tokens?`<span data-tooltip="${escape(tokenUsageText(t))}">· ${t.usage_scope==='turn'?'本轮 ':t.usage_scope==='conversation'?'会话累计 ':'CLI 统计 '}${Number(t.usage.total_tokens).toLocaleString()} tokens</span>`:''}${typeof taskActionMarkup==='function'?taskActionMarkup(t):''}${t.response?`<button class="copy-reply" data-reply="${t.id}">复制回复</button>`:''}</div></article>`;}
 
 function renderExternal(position=null){
   const session=activityState.sessions.find(s=>s.id===externalId)||externalDetail?.session;
@@ -1234,7 +1251,7 @@ function render(){
   if(conv?.summary){syncMessageRows('loading:'+conv.id,[{key:'loading',signature:'loading',html:()=>'<p class="activity-empty">正在载入最近 20 轮对话…</p>'}]);return;}
   const rows=[];for(const t of conv?.turns||[]){
     rows.push({key:t.id+':user',signature:JSON.stringify([t.prompt,t.created_at]),html:()=>panelUserHTML(t)});
-    rows.push({key:t.id+':assistant',codePrefix:t.id,signature:JSON.stringify([t.response,t.status,t.error,t.model,t.elapsed,t.usage,t.usage_scope,t.images,t.completion_evidence,t.compaction_evidence,t.action,t.recovery_of,t.review,t.progress,t.progress_updated_at,t.progress_omitted,t.events,t.model_changes,t.fallback_notice,t.attempts,conversationMeta(conv.id)?.branches?.[t.branch]?.last_turn_id]),html:()=>panelAssistantHTML(t)});
+    rows.push({key:t.id+':assistant',codePrefix:t.id,signature:JSON.stringify([t.response,t.status,t.error,t.model,t.elapsed,t.usage,t.usage_scope,t.images,t.completion_evidence,t.failure_evidence,t.compaction_evidence,t.action,t.recovery_of,t.review,t.progress,t.progress_updated_at,t.progress_omitted,t.events,t.model_changes,t.fallback_notice,t.attempts,conversationMeta(conv.id)?.branches?.[t.branch]?.last_turn_id]),html:()=>panelAssistantHTML(t)});
   }
   const changed=syncMessageRows('panel:'+conv?.id,rows);lastRender='panel:'+conv?.id;
   const entry=conversationPages.get(pageCacheKey(conv?.id)),scroll=entry?.scroll;if(entry)entry.scroll=null;
@@ -1278,6 +1295,7 @@ $('settings-collaboration').addEventListener('click',()=>{const conv=conversatio
 $('settings-auto-open').addEventListener('click',()=>{const conv=conversationMeta($('settings-auto-open').dataset.conversation);return setAutoOpenPreference(conv,conv?.auto_open_activity===false);});
 document.querySelectorAll('[data-font-size]').forEach(b=>b.addEventListener('click',()=>saveUISetting('font',Number(b.dataset.fontSize))));
 document.querySelectorAll('[data-idle-ms]').forEach(b=>b.addEventListener('click',()=>saveUISetting('idleMs',Number(b.dataset.idleMs))));
+document.querySelectorAll('[data-theme-choice]').forEach(b=>b.addEventListener('click',()=>saveUISetting('theme',b.dataset.themeChoice)));
 function renderGlobalModelSettings(){
   const models=orderedModels(snapshot.health?.models||[],uiSettings.modelOrder),selected=snapshot.preferred_model||'',source=$('global-model-select');
   let html='<option value="">智能选择（按额度）</option>'+models.map(m=>'<option value="'+escape(m.id)+'">'+escape(m.label)+'</option>').join('');
@@ -1361,9 +1379,11 @@ async function saveGlobalModelChoice(){
 }
 $('fallback-expand').addEventListener('click',()=>{fallbackExpanded=!fallbackExpanded;renderFallbackSettings();});
 $('fallback-kind').addEventListener('change',renderFallbackSettings);
+document.querySelectorAll('[data-fallback-kind]').forEach(button=>button.addEventListener('click',()=>{$('fallback-kind').value=button.dataset.fallbackKind;fallbackAvailableExpanded=false;renderFallbackSettings();}));
 $('fallback-scope').addEventListener('change',()=>{fallbackScopeId=$('fallback-scope').value;renderFallbackSettings();});
 $('fallback-enabled').addEventListener('click',()=>{const {settings}=fallbackView();saveFallbackSettings({...settings,enabled:!settings.enabled});});
 $('fallback-reset').addEventListener('click',()=>{const {settings}=fallbackView();saveFallbackSettings({enabled:settings.enabled});});
+$('fallback-add-toggle').addEventListener('click',()=>{fallbackAvailableExpanded=!fallbackAvailableExpanded;renderFallbackSettings();});
 $('fallback-models').addEventListener('click',event=>{const button=event.target.closest('[data-fallback-move]');if(button&&!button.disabled)moveFallbackModel(button.dataset.fallbackId,button.dataset.fallbackMove);});
 $('fallback-models').addEventListener('change',event=>{
   const input=event.target,family=input.dataset.fallbackFamily||input.dataset.fallbackTier;if(!family)return;

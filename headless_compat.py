@@ -139,6 +139,78 @@ class TurnEvidence:
             return None
         return {'source': 'cli_checkpoint', 'conversation_id': sid, 'step_index': max(checkpoints)}
 
+    def prove_denied_historical_error(self, result, root=None):
+        """Identify a failed tool round carrying an older quota diagnostic.
+
+        This only explains a failure. It never proves success or authorizes
+        replay, and a current error_message keeps the quota error intact.
+        """
+        sid, error = result.get('conversation_id'), result.get('error')
+        denied = result.get('denied_actions')
+        if (self.invalid or result.get('status') != 'ERROR' or result.get('response')
+                or not isinstance(denied, list) or not denied or len(denied) > 32
+                or not isinstance(sid, str) or not re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', sid)
+                or not isinstance(error, str) or not 0 < len(error) <= 4096):
+            return None
+        names = []
+        for action in denied:
+            name = action.get('action') if isinstance(action, dict) else action
+            if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,80}', name):
+                return None
+            # The official result calls a denied run_command action "command"
+            # (display_name Bash); the stream and database use run_command.
+            # This alias explains a failure only. It never grants retry safety.
+            names.append({'command':'run_command'}.get(name, name))
+        users = [i for i, step in self.steps.items() if step.get('step_type') == 'user_input']
+        if len(users) != 1:
+            return None
+        first = users[0]
+        types = {14:'user_input',15:'agent_response',101:'system_message',23:'checkpoint',132:'tool'}
+        failed_tools = []
+        for index, step in self.steps.items():
+            if index < first or step.get('conversation_id') != sid or step.get('text'):
+                return None
+            if step.get('step_type') == 'tool':
+                tool = step.get('tool') or {}
+                if step.get('state') != 'ERROR' or tool.get('name') not in names or not tool.get('failed'):
+                    return None
+                failed_tools.append(index)
+            elif step.get('step_type') not in types.values() or step.get('state') != 'DONE':
+                return None
+        if not failed_tools or {self.steps[i]['tool']['name'] for i in failed_tools} != set(names):
+            return None
+        cli_root = Path(root) if root is not None else Path.home() / '.gemini/antigravity-cli'
+        database = cli_root / 'conversations' / (sid + '.db')
+        try:
+            if sum(p.stat().st_size for p in (database, Path(str(database) + '-wal')) if p.exists()) > 64 * 1024 * 1024:
+                return None
+            rows = read_rows(database, 'SELECT idx,step_type,status,step_payload FROM steps WHERE '
+                             '(idx>=? AND idx<COALESCE((SELECT MIN(idx) FROM steps WHERE idx>? AND step_type=14),9223372036854775807)) '
+                             'OR (idx<? AND step_type=17 AND instr(step_payload,CAST(? AS BLOB))>0) ORDER BY idx LIMIT 257',
+                             (first, first, first, error))
+            if not rows or len(rows) >= 257:
+                return None
+            older = [r for r in rows if r['idx'] < first and r['step_type'] == 17 and r['status'] == 3]
+            current = [r for r in rows if r['idx'] >= first]
+            if (not older or {r['idx'] for r in current} != set(self.steps)
+                    or any(types.get(r['step_type']) != self.steps[r['idx']].get('step_type')
+                           or r['status'] != (7 if r['idx'] in failed_tools else 3) for r in current)):
+                return None
+            for row in current:
+                if row['idx'] in failed_tools:
+                    fields = proto_fields(row['step_payload'])
+                    name = proto_fields(proto_fields(fields[5])[4])[2].decode()
+                    if name != self.steps[row['idx']]['tool']['name']:
+                        return None
+                elif row['step_type'] == 15:
+                    message = visible_step(row)
+                    if not message or message['text'] or message['truncated']:
+                        return None
+            return {'source':'official_tool_denial', 'user_step':first, 'denied_tools':list(dict.fromkeys(names)),
+                    'historical_error_step':max(r['idx'] for r in older), 'raw_cli_error':error}
+        except (OSError, sqlite3.Error, ValueError, KeyError, TypeError, UnicodeError):
+            return None
+
     def prove_historical_error(self, result, root=None, reader=None, time_window=None):
         sid, error = result.get('conversation_id'), result.get('error')
         if (self.invalid or result.get('status') != 'ERROR'

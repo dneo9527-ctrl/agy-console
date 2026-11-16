@@ -132,6 +132,13 @@ class TerminalLifecycleTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.data = self.root / 'data'
+        # These real-process lifecycle tests must not inherit the installed
+        # release source and start unrelated GitHub checks.  Keep the actual
+        # updater and reload code, but give this disposable profile no source.
+        updates = self.data / 'software-updates'
+        updates.mkdir(parents=True)
+        (updates / 'preferences.json').write_text(json.dumps(
+            {'repository':'', 'channel':'preview', 'automatic':False}))
         self.pid_file = self.root / 'fake-cli.pid'
         self.fake = self.root / 'fake-agy'
         self.fake.write_text(FAKE)

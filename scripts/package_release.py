@@ -62,7 +62,10 @@ def build(out, vendor_archive, expected_vendor_digest, windows_only=False, inclu
     windows['SHA256SUMS.txt'] = ''.join(sha256(data)+'  '+n+'\n' for n,data in sorted(windows.items())).encode()
     write_zip(out/('AgyConsole-'+VERSION+'-windows-x64-preview.zip'), 'AgyConsole-Windows-x64/', windows)
     update_manifest = {'schema':1,'version':VERSION,'platforms':{}}
-    targets = ('windows-x64',) if windows_only else ('macos-arm64','macos-x64','linux-arm64','linux-x64','windows-x64')
+    # Windows releases retain the native installer's stable launcher contract.
+    # Its complete package is delivered separately; older portable layouts must
+    # not receive only the new app files through the shared update manifest.
+    targets = ('windows-x64',) if windows_only else ('macos-arm64','macos-x64','linux-arm64','linux-x64')
     for target in (targets if include_program_updates else ()):
         app = ROOT/'windows/app' if target == 'windows-x64' else ROOT
         payload = {n:(app/n).read_bytes() for n in sorted(FILES) if (app/n).is_file()}

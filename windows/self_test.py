@@ -83,6 +83,13 @@ class PortableTests(unittest.TestCase):
     def test_native_imports(self):
         import psutil,winpty,server,account_status
         self.assertTrue(psutil.Process().memory_info().rss>0)
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory, patch('server.SoftwareUpdates'), patch('server.Path.home', return_value=Path(directory)):
+            app=server.Console(Path(directory)/'isolated-data', 'nonexistent-fake-cli')
+            try:
+                self.assertTrue(app.service_info()['features']['configuration_transfer'])
+            finally:
+                app.close()
 
     @unittest.skipUnless(os.name=='nt','native Windows required')
     def test_conpty_output_and_cleanup(self):
