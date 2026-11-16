@@ -159,7 +159,7 @@
   "windows/installation.py": "27180b25d294b141117bf398a3517a9b89d1b5bfca937842f1fcd876fe4571df",
   "windows/installer/AgyConsole.iss": "b6600525aa34d8eb0e1c24333fc6b293680926ac77260e36dc8d602321abc8e3",
   "windows/installer/installed-mode.json": "643667d71c6f75a13e2da1022f5e857205b6c56ee2678c9698480bd7628811c7",
-  "windows/installer/test_installer.py": "3738f1afc6024daebe6289f162fa2b7598574e8325891113f6e66734ed18eee6",
+  "windows/installer/test_installer.py": "06d30da78bc60215acf76b0f0f94ba6a4afa949efaf8d013be8903c643f8a410",
   "windows/launcher.py": "bea95efb4f78cae3e51d584445d1f01e9483b2b1516f2e117e80c55ce3edb8c5",
   "windows/requirements.txt": "276b2ac56a8d86f0d00f89b6a8e99756a4b6af31fb6860e9f1a8605676b141f2",
   "windows/self_test.py": "830dc1e7dff65163dc454defde08401f10366dad3e43b42eafb9c2583455b798",

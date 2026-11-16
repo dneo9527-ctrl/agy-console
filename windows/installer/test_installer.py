@@ -43,7 +43,7 @@ def main():
     data_bytes = b'{"fixture":"nonsecret retained history"}\n'
     data_sentinel.write_bytes(data_bytes)
     with tempfile.TemporaryDirectory(prefix='Agy CI path with spaces ') as temp:
-        root = Path(temp)
+        root = Path(temp).resolve()  # Normalize RUNNER~1/8.3 aliases before comparing.
         installed = root / 'Program Files With Spaces' / 'AgyConsole'
         official_fixture = root / 'Independent Official Login Fixture'
         official_fixture.mkdir()
@@ -67,7 +67,8 @@ def main():
         layout = json.loads(proc.stdout)
         require(Path(layout['data']) == data, 'Installed data must be outside program directory')
         require(Path(layout['portable']) == installed / 'portable-fixture/data', 'Portable layout changed')
-        require(Path(layout['override']) == installed / 'explicit-data', 'Explicit data argument ignored')
+        require(Path(layout['override']).resolve() == (installed / 'explicit-data').resolve(),
+                'Explicit data argument ignored: ' + repr(layout['override']))
         passed('installed_portable_and_explicit_data_layout')
 
         proc = run([python, '-B', installed / 'self_test.py'], cwd=installed)
