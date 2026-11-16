@@ -6,7 +6,7 @@ Windows 安装版版本：0.1.0-preview.7（2026-11-16）。Windows 10 1809+/11 
 
 - `AgyConsole-0.1.0-preview.7-windows-x64-setup.exe`：普通用户的安装向导；桌面和开始菜单入口，默认安装在 `%LOCALAPPDATA%\Programs\AgyConsole`。
 - `AgyConsole-0.1.0-preview.7-windows-x64-preview.zip`：完整便携版；完全解压到自己的可写目录，不从 ZIP 内运行。
-- `*-program.zip`：只供面板更新器使用，不会安装本向导、监管器或运行时；不能当首次安装包。
+- 本次 `.7` 改动涉及稳定启动器，因此只发布完整安装/便携包和可重建源码，不发布 `.7` 程序更新 ZIP 或更新清单。已有便携版需先关闭，再下载完整包；不要用旧程序更新机制代替安装器升级。
 
 安装后阅读 **Getting Started**，开始菜单提供 **Official CLI Installation**、**Official CLI Login**、**Agy Console**、**Open Panel**。便携目录也有对应的 `Install-Official-CLI.url`、`Login-Agy.cmd`、`Start-Agy.cmd`、`Open-Panel.url`。
 

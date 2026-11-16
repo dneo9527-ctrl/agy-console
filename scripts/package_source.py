@@ -2,6 +2,7 @@
 import argparse
 import json
 from pathlib import Path
+import subprocess
 import zipfile
 from common import ROOT, config, source_files, sha256
 from audit import run as audit
@@ -24,6 +25,17 @@ def main():
     inputs = list(source_files())
     files = {name: path.read_bytes() for name, path in inputs}
     modes = {name: 0o100755 if path.stat().st_mode & 0o111 else 0o100644 for name, path in inputs}
+    # Windows stat does not preserve Git's executable bits. Source archives built
+    # by native Windows CI must retain launchers' reviewed Git modes as well.
+    probe = subprocess.run(['git', 'ls-tree', '-rz', 'HEAD'], cwd=ROOT, capture_output=True)
+    if probe.returncode == 0:
+        for row in probe.stdout.split(b'\0'):
+            if row:
+                metadata, name = row.split(b'\t', 1)
+                mode, kind, _ = metadata.decode().split()
+                decoded = name.decode('utf-8')
+                if decoded in modes and kind == 'blob' and mode in ('100644', '100755'):
+                    modes[decoded] = int(mode, 8)
     sums = {name: sha256(data) for name, data in files.items()}
     files['PACKAGE-MANIFEST.json'] = json.dumps({'version': version, 'kind': 'source',
         'rehearsal': args.rehearsal, 'files': sums}, sort_keys=True, indent=2).encode('utf-8')

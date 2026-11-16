@@ -58,12 +58,16 @@ Name: "{group}\Uninstall Agy Console"; Filename: "{uninstallexe}"; WorkingDir: "
 Filename: "{app}\Getting-Started.html"; Description: "Open the first-use guide (official CLI installation and login)"; Flags: postinstall shellexec skipifsilent
 
 [Code]
+type
+  // Inno Setup 6 runs a 32-bit Setup/Uninstall process even when it installs
+  // x64 files. NativeInt/THandle aliases in the v7 docs are unavailable in v6.
+  TKernelHandle = LongWord;
 var
-  UninstallGuard: NativeInt;
+  UninstallGuard: TKernelHandle;
 
-function WinCreateMutex(SecurityAttributes: NativeInt; InitialOwner: Boolean; const Name: String): NativeInt;
+function WinCreateMutex(SecurityAttributes: LongWord; InitialOwner: LongWord; const Name: String): TKernelHandle;
   external 'CreateMutexW@kernel32.dll stdcall';
-function WinCloseHandle(Handle: NativeInt): Boolean;
+function WinCloseHandle(Handle: TKernelHandle): LongWord;
   external 'CloseHandle@kernel32.dll stdcall';
 
 function InitializeSetup(): Boolean;
@@ -89,7 +93,7 @@ var
 begin
   // SetupMutex is not created automatically by Uninstall. Hold the same named
   // object before checking the application, preventing a new launch mid-delete.
-  UninstallGuard := WinCreateMutex(0, False, 'Local\AgyConsole.Setup.v1');
+  UninstallGuard := WinCreateMutex(0, 0, 'Local\AgyConsole.Setup.v1');
   GuardError := DLLGetLastError;
   Result := (UninstallGuard <> 0) and (GuardError <> 183);
   if not Result then begin

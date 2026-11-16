@@ -30,7 +30,7 @@ def write_zip(path, prefix, files, modes=None):
             if archive.read(prefix + name) != data: raise ValueError('Archive byte mismatch')
 
 
-def build(out, vendor_archive, expected_vendor_digest, windows_only=False):
+def build(out, vendor_archive, expected_vendor_digest, windows_only=False, include_program_updates=True):
     if audit()['status'] != 'passed': raise ValueError('Source audit failed')
     if sha256(vendor_archive.read_bytes()) != expected_vendor_digest:
         raise ValueError('Windows handoff runtime carrier digest mismatch')
@@ -62,7 +62,8 @@ def build(out, vendor_archive, expected_vendor_digest, windows_only=False):
     windows['SHA256SUMS.txt'] = ''.join(sha256(data)+'  '+n+'\n' for n,data in sorted(windows.items())).encode()
     write_zip(out/('AgyConsole-'+VERSION+'-windows-x64-preview.zip'), 'AgyConsole-Windows-x64/', windows)
     update_manifest = {'schema':1,'version':VERSION,'platforms':{}}
-    for target in (('windows-x64',) if windows_only else ('macos-arm64','macos-x64','linux-arm64','linux-x64','windows-x64')):
+    targets = ('windows-x64',) if windows_only else ('macos-arm64','macos-x64','linux-arm64','linux-x64','windows-x64')
+    for target in (targets if include_program_updates else ()):
         app = ROOT/'windows/app' if target == 'windows-x64' else ROOT
         payload = {n:(app/n).read_bytes() for n in sorted(FILES) if (app/n).is_file()}
         expected = set(manifest()['program_files'][target])
@@ -73,7 +74,8 @@ def build(out, vendor_archive, expected_vendor_digest, windows_only=False):
         write_zip(out/name, '', payload)
         path = out/name
         update_manifest['platforms'][target] = {'file':name,'sha256':sha256(path.read_bytes()),'bytes':path.stat().st_size}
-    (out/'updates.json').write_text(json.dumps(update_manifest,indent=2)+'\n', encoding='utf-8')
+    if include_program_updates:
+        (out/'updates.json').write_text(json.dumps(update_manifest,indent=2)+'\n', encoding='utf-8')
     assets = [{'name':p.name,'bytes':p.stat().st_size,'sha256':sha256(p.read_bytes())} for p in sorted(out.iterdir())]
     (out/'SHA256SUMS').write_text(''.join(a['sha256']+'  '+a['name']+'\n' for a in assets), encoding='utf-8')
     return {'version':VERSION,'assets':assets,'runtime_carrier_sha256':expected_vendor_digest,
