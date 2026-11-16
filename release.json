@@ -8,7 +8,7 @@
   "license": "MIT",
   "authorization_reference": "Owner authorized public MIT releases and handed completed .8 fixes to the release workflow, 2026-11-17",
   "source_frozen": true,
-  "source_manifest_sha256": "de581b7554c483b8fe2fb8d16154c90430e11cd12d51d86806a69132d7d1fbca",
+  "source_manifest_sha256": "13b257adf40ae7296a99493d251fc5415dec4f1e19f2f4366724fbd194250542",
   "channel": "preview",
   "platforms": [
     "macos-source",

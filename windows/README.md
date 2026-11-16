@@ -60,9 +60,9 @@ PAC 自动配置、远端代理和带账号密码的代理不会被自动搬进 
 
 不写 `--model` 会尊重该固定窗口按文字/生图保存的模型与候补设置。每次使用同一聊天的环境 ID，勿借用其他聊天 ID。若 CLI 环境未提供 ID，需要由 Codex 用真实当前聊天 ID 显式传 `--thread-id`，不能按标题猜测。
 
-Windows 的 Codex 仍需配置本机协作 Skill/项目指令来自动调用 bridge。这个发行包不会改写你已有的 Codex 指令；仅打开网页不能唤醒闲置的 Codex，也不会自动把这台 Mac 的全部聊天绑定带过去。显示右侧活动页取决于当前 Codex 的浏览器工具及权限。
+完整包已附 `skills\agy-console`。双击 **Install Codex Skill.cmd**，或从开始菜单选择 **Install Codex Skill**，使用包内 Python 安装并启用默认协作。该显式入口只添加一段可移除的托管规则，保留已有指令；setup.exe 本身不会修改 Codex home。仅按需调用可省略 `--enable-default`。连接记录在本机生成；移动面板后须重新运行 Skill 安装入口。
 
-首次与 Codex 接入请使用本节示例，并按自己的安装目录调整路径；安装器不会替你修改 Codex 指令。
+仅打开网页不能唤醒闲置的 Codex，也不会自动带入其他电脑的聊天绑定。显示右侧活动页取决于当前 Codex 的浏览器工具及权限。程序更新不更新安装到 Codex home 的 Skill；新 Skill 需从完整包显式刷新。
 
 ## 自检、更新和备份
 

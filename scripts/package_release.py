@@ -30,6 +30,31 @@ def write_zip(path, prefix, files, modes=None):
             if archive.read(prefix + name) != data: raise ValueError('Archive byte mismatch')
 
 
+def build_skill(out):
+    if audit()['status'] != 'passed': raise ValueError('Source audit failed')
+    out.mkdir(parents=True, exist_ok=True)
+    rows = list(source_files())
+    names = {'VERSION', 'LICENSE', 'docs/CODEX-SKILL.md', 'scripts/install_codex_skill.py',
+             'windows/install_codex_skill.py'}
+    files = {n:p.read_bytes() for n,p in rows if n in names or n.startswith('skills/agy-console/')
+             or n.startswith('windows/skills/agy-console/')}
+    required = names | {'skills/agy-console/SKILL.md', 'skills/agy-console/scripts/dispatch.py',
+                        'windows/skills/agy-console/SKILL.md', 'windows/skills/agy-console/scripts/dispatch.py'}
+    if set(files) != required: raise ValueError('Companion skill package is incomplete')
+    files['README.md'] = ('# Agy Console companion skill\n\n'
+        'For an existing console, run `python3 scripts/install_codex_skill.py '
+        '--console-root /path/to/AgyConsole --enable-default`.\n\n'
+        'Windows: run `windows/install_codex_skill.py` with the existing console\'s bundled '
+        'runtime/python.exe and pass `--console-root` explicitly.\n\n'
+        'See [installation and removal](docs/CODEX-SKILL.md). This archive contains no '
+        'console runtime, credentials or machine-specific connection.\n').encode('utf-8')
+    files['PACKAGE-MANIFEST.json'] = json.dumps({'schema':1,'version':VERSION,'kind':'codex-skill',
+        'files':{n:sha256(data) for n,data in sorted(files.items())}}, indent=2).encode('utf-8')
+    path = out/('AgyConsole-'+VERSION+'-codex-skill.zip')
+    write_zip(path, 'AgyConsole-'+VERSION+'-codex-skill/', files)
+    return path
+
+
 def build(out, vendor_archive, expected_vendor_digest, windows_only=False, include_program_updates=True):
     if audit()['status'] != 'passed': raise ValueError('Source audit failed')
     if sha256(vendor_archive.read_bytes()) != expected_vendor_digest:
@@ -54,6 +79,8 @@ def build(out, vendor_archive, expected_vendor_digest, windows_only=False, inclu
     for platform in (() if windows_only else ('macos','linux')):
         write_zip(out/('AgyConsole-'+VERSION+'-'+platform+'-source-preview.zip'),
                   'AgyConsole-'+VERSION+'/', posix, modes)
+    if not windows_only:
+        build_skill(out)
     windows = {n[len('windows/'):]:data for n,data in source.items()
                if n.startswith('windows/') and not n.startswith('windows/installer/')}
     windows.update(runtime)

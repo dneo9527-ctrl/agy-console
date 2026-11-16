@@ -25,6 +25,7 @@ Windows 普通用户选择 `.8` 安装向导，已安装用户关闭本工具后
 1. 安装并登录 [官方 Antigravity CLI](https://antigravity.google/docs/install?tab=cli)，无需为每个聊天重复登录。
 2. 完整解压到可写目录。Mac 双击 `启动控制台.command`；Linux 在终端执行 `./Start-Agy.sh`；Windows 用 `Start-Agy.cmd`。
 3. 打开 `http://127.0.0.1:8765/`，保持启动终端打开。关闭终端会结束服务和它启动的 CLI；关闭网页只关闭页面。
+4. 需要 Codex 持续协作时，Mac 双击 `Install Codex Skill.command`，Windows 双击 `Install Codex Skill.cmd`，Linux 运行 `python3 scripts/install_codex_skill.py --enable-default`。完整包已包含 Skill；[安装与接入说明](docs/CODEX-SKILL.md)。
 
 Windows 安装向导创建桌面/开始菜单入口，首次指南提供官方 CLI 安装与登录入口；数据在 `%LOCALAPPDATA%\AgyConsole\data`，升级/卸载默认保留。便携版保留自身 data，不自动合并。运行中需先关本工具再升级/卸载。详见 [Windows 说明](windows/README.md)。
 
@@ -44,14 +45,16 @@ Windows 安装向导创建桌面/开始菜单入口，首次指南提供官方 C
 
 ## 与 Codex 连接
 
-先启动面板，再在当前 Codex 聊天环境运行（路径改为实际位置）：
+完整包内附 `agy-console` Skill 和安装入口；无需自行编写协作指令。安装入口会保留原规则，添加可移除的默认协作段。仅按需使用可不启用默认协作，详见 [Skill 说明](docs/CODEX-SKILL.md)。已有面板可[单独下载 Skill 包](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.8/AgyConsole-0.1.0-preview.8-codex-skill.zip)。
+
+手动调试连接时，先启动面板，再在当前 Codex 聊天环境运行（路径改为实际位置）：
 
 ```sh
 python3 /path/to/AgyConsole/bridge.py --ensure --title '项目名称'
 python3 /path/to/AgyConsole/bridge.py --task-file /path/to/task.txt --out /path/to/new-result --timeout 600
 ```
 
-Windows 使用包内 `runtime/python.exe` 与 `app/bridge.py`。`CODEX_THREAD_ID` 必须来自真实当前聊天；固定 URL 中的 `?codex=...` 对应本聊天。默认不传 `--model`，保留窗口选择与候补。持续协作还需要使用者自己的 Skill/项目指令；打开网页本身不会唤醒闲置的 Codex。
+Windows 使用包内 `runtime/python.exe` 与 `app/bridge.py`。`CODEX_THREAD_ID` 必须来自真实当前聊天；固定 URL 中的 `?codex=...` 对应本聊天。默认不传 `--model`，保留窗口选择与候补。打开网页本身不会唤醒闲置的 Codex。
 
 ## 验证与边界
 

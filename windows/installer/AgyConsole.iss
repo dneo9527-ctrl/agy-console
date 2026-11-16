@@ -51,6 +51,7 @@ Name: "{group}\Agy Console"; Filename: "{app}\Start-Agy.cmd"; WorkingDir: "{app}
 Name: "{group}\Official CLI Installation"; Filename: "{app}\Install-Official-CLI.url"; WorkingDir: "{app}"
 Name: "{group}\Official CLI Login"; Filename: "{app}\Login-Agy.cmd"; WorkingDir: "{app}"
 Name: "{group}\Open Panel"; Filename: "{app}\Open-Panel.url"; WorkingDir: "{app}"
+Name: "{group}\Install Codex Skill"; Filename: "{app}\Install Codex Skill.cmd"; WorkingDir: "{app}"
 Name: "{group}\Getting Started"; Filename: "{app}\Getting-Started.html"; WorkingDir: "{app}"
 Name: "{group}\Uninstall Agy Console"; Filename: "{uninstallexe}"; WorkingDir: "{app}"
 

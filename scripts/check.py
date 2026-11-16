@@ -26,8 +26,9 @@ def main():
         # automatic public update requests. Actual updater networking is a separate check.
         test_root = Path(folder)/'source'; test_root.mkdir()
         for name in manifest()['source_files']:
-            if '/' not in name:
-                shutil.copy2(ROOT/name,test_root/name)
+            destination = test_root/name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT/name, destination)
         (test_root/'release-source.json').write_text('{"repository":"","channel":"preview"}\n',encoding='utf-8')
         result['test_configuration'] = 'Deployment repository blanked in disposable copy; program bytes unchanged'
         suites = sorted(p.name for p in ROOT.glob('test_*.py'))
