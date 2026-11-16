@@ -8,7 +8,7 @@
   "license": "MIT",
   "authorization_reference": "Owner requested Windows packaged installer publication via source chat, 2026-11-16; existing public + MIT authorization retained",
   "source_frozen": true,
-  "source_manifest_sha256": "4296749953936455da9d846e98084419d74bfec46706d3293a5de5d1cef5c302",
+  "source_manifest_sha256": "a5ddce393e253f0c72aec8555913c96187048b2eb62d959e446e216033bfe14d",
   "channel": "preview",
   "platforms": [
     "windows-x64"

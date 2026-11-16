@@ -189,6 +189,28 @@ ConvertTo-Json -InputObject @($rows) -Compress'''
         require(not (installed / 'launcher.py').exists() and not python.exists(), 'Program files survived uninstall')
         require(data_sentinel.read_bytes() == data_bytes and official_marker.read_text() == 'not a credential', 'Uninstall deleted external data')
         passed('real_uninstall_preserves_external_data')
+        # Inno's original uninstaller exits before its temporary cleanup child
+        # has closed the log. Require real handle release before removing the
+        # disposable fixture; do not hide failed cleanup or kill the child.
+        deadline = time.monotonic() + 15
+        for log in root.glob('*.log'):
+            released = log.with_suffix('.released-log')
+            while True:
+                try:
+                    log.rename(released)  # A non-share-delete writer blocks this.
+                    break
+                except PermissionError:
+                    if time.monotonic() >= deadline:
+                        raise AssertionError('Uninstaller did not release its own log handle: ' + log.name)
+                    time.sleep(.1)
+        # Also require the actual maintenance guard to disappear, rather than
+        # treating deletion of the visible program files as the commit point.
+        probe = ('import sys;sys.path.insert(0,sys.argv[1]);'
+                 'from installation import ForegroundGuard;'
+                 'g=ForegroundGuard();g.__enter__();g.close()')
+        proc = run([sys.executable, '-B', '-c', probe, Path(__file__).resolve().parents[1]])
+        require(proc.returncode == 0, 'Uninstall left its maintenance guard active: ' + proc.stderr)
+        passed('uninstaller_releases_own_logs_and_maintenance_guard_before_cleanup')
     report.update(status='passed', installation_performed='Only disposable GitHub runner',
                   limitations=['No actual official CLI login or model call', 'Previous installed version simulated; not two publicly released setups', 'No Windows SmartScreen/Defender/old OS acceptance claim'])
     args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
