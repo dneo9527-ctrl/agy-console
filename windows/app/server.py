@@ -15,6 +15,7 @@ import secrets
 import selectors
 import signal
 import socketserver
+import stat
 import subprocess
 import sys
 if os.name != 'nt':
@@ -25,6 +26,7 @@ import tempfile
 import time
 from urllib.parse import parse_qs, quote, urlsplit
 import uuid
+import unicodedata
 from image_files import collect_images, image_snapshot, manifest_file
 from account_status import probe_account
 from activity_monitor import ActivityMonitor
@@ -43,11 +45,54 @@ from software_updates import SoftwareUpdates
 from update_bootstrap import confirm as confirm_software_update
 from foreground_reload import PROXY_KEYS, reload_environment, validate_sources
 from conversation_sessions import normalize_sessions, branch_for, official_ids, session_owner, assign_session, session_summaries
+from multi_ai_collaboration import (Coordination, default_policy_path, launcher_path,
+                                    canonical as collaboration_policy, migrate as migrate_collaboration,
+                                    allowed as collaboration_allowed, patch as patch_collaboration,
+                                    validate as validate_collaboration, roundtable as roundtable_policy,
+                                    validate_roundtable, patch_roundtable, roundtable_plan, roundtable_prompt,
+                                    roundtable_message_request, validate_roundtable_messages)
 
 ROOT = Path(__file__).resolve().parent
 APP_VERSION = (ROOT / 'VERSION').read_text(encoding='utf-8').strip()
 BUSY = {'queued', 'running', 'cancelling'}
 DEFAULT_MODEL = 'gemini-4-argon-high'
+BARK_SCRIPT = Path.home() / 'Library/Application Support/CodexBark/bark.py'
+
+
+def bark_notification_payload(status, conversation_id, turn_id, chat_title):
+    """Only final outcome and short window identity may leave the console."""
+    if status not in ('completed', 'failed'):
+        return None
+    if any(not isinstance(value, str) or not re.fullmatch(r'[a-f0-9]{32}', value)
+           for value in (conversation_id, turn_id)):
+        return None
+    title = chat_title if isinstance(chat_title, str) else ''
+    title = ''.join(' ' if unicodedata.category(char).startswith('C') else char for char in title[:256])
+    title = ' '.join(title.split())[:80] or 'Agy'
+    return {'status': status, 'conversation_id': conversation_id, 'turn_id': turn_id,
+            'chat_title': title}
+
+
+def notify_bark(payload):
+    """Best effort local event handoff; the receiver owns network and policies."""
+    try:
+        if sys.platform != 'darwin' or not isinstance(payload, dict) or set(payload) != {
+                'status', 'conversation_id', 'turn_id', 'chat_title'}:
+            return
+        clean = bark_notification_payload(**payload)
+        if clean is None:
+            return
+        info = BARK_SCRIPT.lstat()
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                or stat.S_IMODE(info.st_mode) & 0o022):
+            return
+        subprocess.run(['/usr/bin/python3', '-I', '-B', str(BARK_SCRIPT), 'agy-event'],
+                       input=json.dumps(clean, ensure_ascii=False).encode('utf-8'),
+                       stdin=None, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=1, check=False)
+    except Exception:
+        # Notification availability must never change an Agy task's result.
+        return
 
 
 class ConflictError(ValueError):
@@ -130,10 +175,13 @@ def write_json(path, value):
 
 
 class Console:
-    def __init__(self, data, binary, timeout=600, import_history=False, account_reader=None):
+    def __init__(self, data, binary, timeout=600, import_history=False, account_reader=None, coordination_path=None,
+                 notification_sender=None):
         self.data, self.binary, self.timeout = Path(data), str(binary), timeout
         PanelBackups.recover_interrupted(self.data)
         self.data.mkdir(parents=True, exist_ok=True)
+        self.coordination = Coordination(coordination_path or self.data / 'coordination.json', ROOT)
+        self.coordination_error = ''
         self.lock = threading.RLock()
         self.close_lock = threading.Lock()
         self.closed = False
@@ -148,6 +196,7 @@ class Console:
         self.account_thread = None
         self.account_lock = threading.Lock()
         self.account_reader = account_reader or probe_account
+        self.notification_sender = notification_sender
         self.activity = ActivityMonitor(Path.home() / '.gemini/antigravity-cli', self.binary)
         self.resources = ResourceMonitor()
         self.started = time.monotonic()
@@ -179,6 +228,7 @@ class Console:
         self.state.setdefault('model_order_version', 0)
         for conv in self.state['conversations']:
             normalize_sessions(conv)
+            migrate_collaboration(conv)
             for turn in conv['turns']:
                 if turn['status'] in BUSY:
                     turn.update(status='interrupted', error='服务曾重启，本次任务未确认完成。', ended_at=now())
@@ -204,11 +254,25 @@ class Console:
     def update_changed(self):
         with self.lock:self._touch()
 
-
-    def save(self, conv=None):
+    def save(self, conv=None, require_coordination=False):
         with self.lock:
+            # Offline consumers must not observe old permissions after a failed
+            # write. Publish only after the canonical state is durably replaced.
+            self.coordination.invalidate()
+            self.coordination_error = '离线协作策略尚未同步。'
             write_json(self.file, self.state)
             self._touch(conv)
+            try:
+                self.coordination.publish(self.state['conversations'])
+            except ValueError as error:
+                # A corrupt chat must block all offline auto-starts without
+                # preventing the foreground panel and manual work from opening.
+                # Preference writes require a complete synchronized snapshot.
+                self.coordination_error = str(error)
+                if require_coordination:
+                    raise
+            else:
+                self.coordination_error = ''
 
     def reconcile_recent_results(self):
         """Repair only proven API recovery; retain raw files and a state backup."""
@@ -382,7 +446,7 @@ class Console:
             if conv is None:
                 conv = self.create(title or 'Codex · ' + thread_id[:8], save=False)
             conv['codex_thread_id'] = thread_id
-            conv.setdefault('gpt_collaboration', True)
+            migrate_collaboration(conv)
             conv.setdefault('auto_open_activity', True)
             conv['custom_title'] = True
             if agy_id:
@@ -401,7 +465,7 @@ class Console:
             conv['updated_at'] = now()
             normalize_sessions(conv)
             self.save(conv)
-            return copy.deepcopy(conv)
+            return self.conversation_metadata(conv)
 
     def set_collaboration(self, cid, enabled):
         if type(enabled) is not bool:
@@ -412,11 +476,187 @@ class Console:
             conv = self.conversation(cid)
             if conv is None or not conv.get('codex_thread_id'):
                 raise ValueError('请先进入这条 Codex 聊天的固定入口。')
-            conv['gpt_collaboration'] = enabled
-            conv['gpt_collaboration_updated_at'] = now()
-            self.save(conv)
+            current = collaboration_policy(conv)
+            current['enabled'] = enabled
+            if enabled:
+                current['providers']['agy']['enabled'] = True
+            with self.collaboration_transaction(conv):
+                conv['multi_ai_collaboration'] = current
+                conv['gpt_collaboration'] = collaboration_allowed(conv)
+                conv['gpt_collaboration_updated_at'] = now()
             return {'id': cid, 'codex_thread_id': conv['codex_thread_id'], 'enabled': enabled,
                     'updated_at': conv['gpt_collaboration_updated_at']}
+
+    @contextmanager
+    def collaboration_transaction(self, conv=None):
+        """Do not expose a failed preference write as a live permission change."""
+        fields = ('multi_ai_collaboration', 'gpt_collaboration',
+                  'gpt_collaboration_updated_at', 'multi_ai_collaboration_updated_at',
+                  'auto_start_console', 'roundtable', 'roundtable_updated_at')
+        previous = ({key: copy.deepcopy(conv[key]) for key in fields if key in conv}
+                    if conv is not None else None)
+        previous_launcher = self.coordination.launcher
+        self.coordination.invalidate()
+        self.coordination_error = '离线协作策略尚未同步。'
+        try:
+            yield
+            self.save(conv, require_coordination=True)
+        except Exception:
+            if conv is not None:
+                # Workers retain the original turn objects; restoring settings
+                # must not replace history, session objects, or active work.
+                for key in fields:
+                    if key in previous:
+                        conv[key] = previous[key]
+                    else:
+                        conv.pop(key, None)
+            self.coordination.launcher = previous_launcher
+            # A failed publish may follow a successful state replace. Restore
+            # that file too, but keep the offline snapshot invalid until a
+            # subsequent successful save; never report a partial rollback as
+            # synchronized. A persistent disk error still propagates.
+            try:
+                self.coordination.invalidate()
+                write_json(self.file, self.state)
+            except Exception:
+                pass
+            self._touch(conv)
+            raise
+
+    def conversation_metadata(self, conv):
+        value = copy.deepcopy(conv)
+        if value.get('codex_thread_id'):
+            migrate_collaboration(value)
+            value.setdefault('auto_start_console', False)
+            value['console_startup'] = self.console_startup_info()
+            try:
+                value['roundtable'] = roundtable_policy(value)
+            except ValueError:
+                pass  # Preserve malformed state for diagnostics; its plan fails closed.
+            value['roundtable_plan'] = roundtable_plan(value)
+        return value
+
+    def multi_ai_policy(self, thread_id):
+        with self.lock:
+            conv = next((c for c in self.state['conversations']
+                         if c.get('codex_thread_id') == thread_id and not c.get('deleted_at')), None)
+            if conv is None:
+                raise KeyError('本聊天尚未绑定。')
+            return collaboration_policy(conv)
+
+    def set_multi_ai_collaboration(self, cid, body):
+        with self.lock:
+            if self.stopping or self.maintenance:
+                raise ConflictError('服务暂时不能保存设置。')
+            conv = self.conversation(cid)
+            if conv is None or not conv.get('codex_thread_id'):
+                raise ValueError('请先进入这条 Codex 聊天的固定入口。')
+            updated = patch_collaboration(collaboration_policy(conv), body, conv['codex_thread_id'])
+            # Fail before changing permissions if the offline mirror cannot be invalidated.
+            with self.collaboration_transaction(conv):
+                conv['multi_ai_collaboration'] = updated
+                conv['gpt_collaboration'] = collaboration_allowed(conv)
+                conv['multi_ai_collaboration_updated_at'] = now()
+            return copy.deepcopy(updated)
+
+    def roundtable_policy(self, thread_id):
+        with self.lock:
+            conv = next((c for c in self.state['conversations']
+                         if c.get('codex_thread_id') == thread_id and not c.get('deleted_at')), None)
+            if conv is None:
+                raise KeyError('本聊天尚未绑定。')
+            return roundtable_policy(conv)
+
+    def set_roundtable(self, cid, body):
+        with self.lock:
+            if self.stopping or self.maintenance:
+                raise ConflictError('服务暂时不能保存设置。')
+            conv = self.conversation(cid)
+            if not conv or not conv.get('codex_thread_id'):
+                raise ValueError('请先进入这条 Codex 聊天的固定入口。')
+            updated = patch_roundtable(roundtable_policy(conv), body, conv['codex_thread_id'])
+            with self.collaboration_transaction(conv):
+                conv['roundtable'] = updated
+                conv['roundtable_updated_at'] = now()
+            return copy.deepcopy(updated)
+
+    def record_roundtable_message(self, cid, body):
+        """Store a Codex-observed contribution without adding a CLI task."""
+        with self.lock:
+            if self.stopping or self.maintenance:
+                raise ConflictError('服务暂时不能保存圆桌发言。')
+            conv = self.conversation(cid)
+            if not conv or not conv.get('codex_thread_id'):
+                raise ValueError('请先进入这条 Codex 聊天的固定入口。')
+            clean, settings, branch = roundtable_message_request(body, conv)
+            existing = validate_roundtable_messages(conv)
+            same_source = next((message for message in existing
+                                if message['source_id'] == clean['source_id']), None)
+            if same_source is not None:
+                if any(same_source[key] != clean[key] for key in clean if key != 'codex_thread_id'):
+                    raise ConflictError('同一来源标识已有不同发言，原记录已保留。')
+                return {'recorded': True, 'message': same_source, 'duplicate': True}
+            policy = collaboration_policy(conv)
+            if (not policy['enabled'] or clean['provider'] != 'codex'
+                    and not policy['providers'][clean['provider']]['enabled']):
+                raise ValueError('本聊天已暂停该提供方协作，未记录新的发言。')
+            record = {key: clean[key] for key in clean if key != 'codex_thread_id'}
+            record.update(id=uuid.uuid4().hex, created_at=now(), roundtable=settings, branch=branch,
+                          role='host' if settings['host'] == clean['provider'] else 'participant',
+                          provenance='codex_observed')
+            candidate = existing + [record]
+            validate_roundtable_messages(dict(conv, roundtable_messages=candidate))
+            had_messages = 'roundtable_messages' in conv
+            original_messages, original_updated = conv.get('roundtable_messages'), conv.get('updated_at')
+            conv['roundtable_messages'] = candidate
+            conv['updated_at'] = record['created_at']
+            try:
+                # This content is intentionally absent from the offline policy
+                # mirror. Persist it without rewriting policy readiness/choices.
+                write_json(self.file, self.state)
+                self._touch(conv)
+            except Exception:
+                if had_messages:
+                    conv['roundtable_messages'] = original_messages
+                else:
+                    conv.pop('roundtable_messages', None)
+                conv['updated_at'] = original_updated
+                try:
+                    write_json(self.file, self.state)
+                except Exception:
+                    pass
+                self._touch(conv)
+                raise
+            return {'recorded': True, 'message': copy.deepcopy(record), 'duplicate': False}
+
+    def console_startup_info(self):
+        return self.coordination.metadata()
+
+    def set_console_startup(self, body):
+        if not isinstance(body, dict) or set(body) != {'launcher_path'}:
+            raise ValueError('请选择本机启动入口文件。')
+        selected = launcher_path(body['launcher_path'])
+        with self.lock:
+            if self.stopping or self.maintenance:
+                raise ConflictError('服务暂时不能保存设置。')
+            with self.collaboration_transaction():
+                self.coordination.launcher = selected
+            return self.console_startup_info()
+
+    def set_auto_start_console(self, cid, body):
+        if (not isinstance(body, dict) or set(body) != {'codex_thread_id', 'auto_start_console'}
+                or type(body.get('auto_start_console')) is not bool):
+            raise ValueError('自动启动开关必须为开启或关闭。')
+        with self.lock:
+            if self.stopping or self.maintenance:
+                raise ConflictError('服务暂时不能保存设置。')
+            conv = self.conversation(cid)
+            if not conv or not conv.get('codex_thread_id') or conv['codex_thread_id'] != body['codex_thread_id']:
+                raise ValueError('自动启动设置与当前聊天不一致。')
+            with self.collaboration_transaction(conv):
+                conv['auto_start_console'] = body['auto_start_console']
+            return {'codex_thread_id': conv['codex_thread_id'], 'auto_start_console': conv['auto_start_console'],
+                    'console_startup': self.console_startup_info()}
 
     def set_preferred_model(self, model):
         with self.lock:
@@ -687,6 +927,8 @@ class Console:
         value=validate_configuration(document);settings=value['settings'];window=settings['window']
         if apply_window and (window is None or not cid or not self.conversation(cid)):
             raise ValueError('请先进入目标聊天，或取消导入窗口设置。')
+        if apply_window and 'roundtable' in window and not self.conversation(cid).get('codex_thread_id'):
+            raise ValueError('圆桌主持配置只能导入已绑定 Codex 的固定聊天。')
         available={m['id'] for m in self.health['models']}
         selected=[settings['global']['preferred_model']]
         if apply_window:
@@ -722,14 +964,28 @@ class Console:
                     if key in settings['window']:window[key]=copy.deepcopy(settings['window'][key])
                     else:window.pop(key,None)
                 for key in ('gpt_collaboration','auto_open_activity'):window[key+'_updated_at']=now()
+                if window.get('codex_thread_id'):
+                    portable = settings['window'].get('multi_ai_collaboration')
+                    if portable is not None:
+                        window['multi_ai_collaboration'] = dict(copy.deepcopy(portable), codex_thread_id=window['codex_thread_id'])
+                    elif 'gpt_collaboration' in settings['window']:
+                        # Explicit old-format window imports retain their pause;
+                        # they do not re-enable new providers.
+                        window.pop('multi_ai_collaboration', None)
+                    migrate_collaboration(window)
+                    if 'roundtable' in settings['window']:
+                        window['roundtable'] = dict(copy.deepcopy(settings['window']['roundtable']), codex_thread_id=window['codex_thread_id'])
                 candidate['conversations']=[window if row['id']==cid else row for row in original['conversations']]
             try:
                 # The updater and task workers cannot observe a half-applied import.
-                self.state=candidate;self.save()
+                self.state=candidate;self.save(require_coordination=True)
                 manager.set_preferences(settings['updates'])
             except Exception:
                 self.state=original;manager.preferences=old_preferences;manager.state=old_update_state
+                self.coordination.invalidate()
                 write_json(self.file,original)
+                self.coordination.publish(original['conversations'])
+                self.coordination_error = ''
                 for file,raw in ((prefs_file,prefs_bytes),(pending,pending_bytes)):
                     if raw is None:file.unlink(missing_ok=True)
                     else:file.write_bytes(raw)
@@ -750,14 +1006,18 @@ class Console:
                     state.setdefault('preferred_model', '')
                     state.setdefault('preferred_model_updated_at', None)
                     for conv in state['conversations']:
+                        migrate_collaboration(conv)
                         for lane in normalize_sessions(conv)['branches'].values():
                             sid = lane.get('agy_id')
                             absent = bool(sid and not (self.activity.root / 'conversations' / (sid + '.db')).is_file())
                             lane['restored_context_missing'] = absent
                             if absent:
                                 missing.append({'conversation_id': conv['id'], 'branch': lane['id'], 'title': lane['title']})
+                self.coordination.invalidate()
                 state, result = self.backups.restore(ident, self.state, preferences, prepare=prepare)
                 self.state = state
+                self.coordination.publish(self.state['conversations'])
+                self.coordination_error = ''
                 self._touch()
                 result['missing_contexts'] = missing
                 return result
@@ -834,16 +1094,16 @@ class Console:
     def snapshot(self, summaries=False):
         with self.lock:
             policy, images = self.policy_snapshot(), self.verified_image_models()
-            conversations = [dict(c, model_resolution=self.model_resolution(c, policy, images))
+            conversations = [dict(self.conversation_metadata(c), model_resolution=self.model_resolution(c, policy, images))
                              for c in self.state['conversations'] if not c.get('deleted_at')]
             if summaries:
                 compact = []
                 fields = ('model_changes', 'fallback_notice', 'requested_model', 'fallback_enabled', 'id', 'status', 'kind', 'branch', 'model', 'created_at', 'started_at', 'elapsed', 'events',
-                          'progress', 'progress_updated_at', 'progress_omitted')
+                          'progress', 'progress_updated_at', 'progress_omitted', 'roundtable', 'roundtable_role')
                 for conv in conversations:
-                    item = {k: v for k, v in conv.items() if k != 'turns'}
+                    item = {k: v for k, v in conv.items() if k not in ('turns', 'roundtable_messages')}
                     turns = conv['turns']
-                    item.update(summary=True, collaboration_state=self.collaboration_state(conv), turn_count=len(turns), branches=session_summaries(conv), revision=self.instance_id + ':' + str(self.conversation_revisions.get(conv['id'], 0)),
+                    item.update(summary=True, roundtable_message_count=len(conv.get('roundtable_messages', [])), collaboration_state=self.collaboration_state(conv), turn_count=len(turns), branches=session_summaries(conv), revision=self.instance_id + ':' + str(self.conversation_revisions.get(conv['id'], 0)),
                                 turns=[{k: t.get(k) for k in fields} for i, t in enumerate(turns)
                                        if t['status'] in BUSY or i == len(turns) - 1])
                     compact.append(item)
@@ -886,9 +1146,14 @@ class Console:
                 start = index + 1; end = min(total, start + limit)
             else:
                 end = total; start = max(0, end - limit)
-            value = {k: v for k, v in conv.items() if k != 'turns'}
+            value = {k: v for k, v in conv.items() if k not in ('turns', 'roundtable_messages')}
+            value = self.conversation_metadata(value)
             value['model_resolution'] = self.model_resolution(conv)
             chosen = turns[start:end]
+            chosen_ids = {turn['id'] for turn in chosen}
+            messages = [message for message in conv.get('roundtable_messages', [])
+                        if message.get('anchor_turn_id') in chosen_ids]
+            value.update(roundtable_messages=messages, roundtable_message_count=len(conv.get('roundtable_messages', [])))
             value.update(turns=chosen, turn_count=total, branches=session_summaries(conv), summary=False, revision=self.instance_id + ':' + str(self.conversation_revisions.get(cid, 0)),
                          page={'start': start + 1 if chosen else 0, 'end': end, 'total': total,
                                'branch': branch, 'source': source,
@@ -963,9 +1228,12 @@ class Console:
                     'features': {'quota': True, 'codex_binding': True, 'light_history': True, 'resources': True, 'resource_summary': True, 'context_insights': True, 'window_models': True,
                                  'windows_portable': os.name == 'nt', 'task_recovery': True, 'context_compaction': True, 'history_search': True, 'panel_backups': True, 'account_switch': os.name != 'nt', 'panel_auto_open': True,
                                  'session_groups': True, 'conversation_versions': True, 'proxy_environment': True,
-                                  'gpt_collaboration': True, 'current_turn_results': True, 'global_model': True,
+                                  'gpt_collaboration': True, 'multi_ai_collaboration': True, 'console_startup': True, 'roundtable_host': True, 'roundtable_messages': True, 'current_turn_results': True, 'global_model': True,
                                   'collaboration_history': True, 'verified_api_recovery': True,
-                                  'quota_failover': True, 'software_updates': True, 'configuration_transfer': True, 'model_resolution': True, 'collaboration_results': True, 'queue_priority': True, 'foreground_reload': bool(self.reload_callback)},
+                                  'quota_failover': True, 'model_resolution': True, 'configuration_transfer': True, 'software_updates': True, 'collaboration_results': True, 'queue_priority': True, 'foreground_reload': bool(self.reload_callback)},
+                    'console_startup': self.console_startup_info(),
+                    'coordination_ready': not bool(self.coordination_error),
+                    'coordination_error': self.coordination_error,
                     'instance_id': self.instance_id, 'reloading': self.reloading, 'maintenance': self.maintenance,
                     'network': getattr(self, 'network', {'source': 'inherited'}),
                     'uptime': round(time.monotonic() - self.started), 'active_tasks': active,
@@ -1121,8 +1389,16 @@ class Console:
                 raise ValueError('请选择列表中的可用模型。')
             if type(codex_dispatch) is not bool:
                 raise ValueError('派发来源无效。')
-            if codex_dispatch and (not conv.get('codex_thread_id') or conv.get('gpt_collaboration') is False):
-                raise ValueError('这条聊天已暂停 GPT 协作。请在固定页面重新开启；仍可在网页手动给 Agy 发任务。')
+            if codex_dispatch and not collaboration_allowed(conv, 'agy'):
+                raise ValueError('这条聊天已暂停多 AI 协作或关闭 Agy。请在固定页面确认；仍可在网页手动给 Agy 发任务。')
+            meeting = None
+            if codex_dispatch:
+                setting = roundtable_policy(conv)
+                if setting['mode'] == 'roundtable':
+                    plan = roundtable_plan(conv)
+                    if not plan['ready']:
+                        raise ValueError('圆桌当前不可派发：' + plan['reason'] + '。请检查主持和参与方设置。')
+                    meeting = setting
             lane = branch_for(conv, branch, create=True, title=branch_title)
             if lane.get('restored_context_missing'):
                 sid = lane.get('agy_id')
@@ -1134,6 +1410,16 @@ class Console:
             turn = {'id': uuid.uuid4().hex, 'prompt': prompt.strip(), 'model': model, 'kind': kind, 'branch': lane['id'], 'images': [], 'status': 'queued',
                     'response': '', 'events': [], 'created_at': now(), 'started_at': None, 'ended_at': None,
                     'elapsed': 0, 'error': '', 'usage': {}, 'source': 'codex' if codex_dispatch else 'console'}
+            if meeting is not None:
+                turn['roundtable'] = copy.deepcopy(meeting)
+                turn['roundtable_role'] = 'host' if meeting['host'] == 'agy' else 'participant'
+            elif codex_dispatch and any(t.get('branch') == lane['id']
+                    and t.get('roundtable_role') in ('host', 'participant')
+                    and isinstance(t.get('roundtable'), dict)
+                    and t['roundtable'].get('mode') == 'roundtable' for t in conv['turns']):
+                # Freeze the exit from a persistent meeting persona at submit.
+                # Manual tasks and lanes that never used a meeting stay untouched.
+                turn['roundtable_reset'] = True
             config = (conv.get('fallback_preferences') or {}).get(kind) or {}
             smart = not ((conv.get('model_preferences') or {}).get(kind) if kind in (conv.get('model_preferences') or {}) else self.state.get('preferred_model'))
             turn.update(requested_model=model if explicit_model else preferred or model, model_selection='explicit' if explicit_model else 'window_or_global',
@@ -1306,6 +1592,12 @@ class Console:
                 cli_prompt = turn['prompt'] if not turn.get('attempts') else (
                     '上一轮因模型额度拒绝而未取得执行结果。请继续本会话上一条用户任务尚未完成的部分。'
                     '先核对已有记录，不重复已完成的操作；保留原任务所有约束。')
+                if turn.get('roundtable') is not None:
+                    cli_prompt = roundtable_prompt(cli_prompt, turn['roundtable'], conv.get('codex_thread_id'))
+                elif turn.get('roundtable_reset') is True:
+                    cli_prompt = ('[日常协助 · 非圆桌] 本次为普通有界协助，不担任主持，也不继续此前的圆桌角色。'
+                                  '只完成本次实际收到的任务；不组织额外讨论、不编造其他 AI 发言或共识。'
+                                  'Codex 负责实际执行和独立核验。\n[本次任务]\n' + cli_prompt)
                 image_task = turn.get('kind') == 'image'
                 if image_task:
                     cli_prompt += ('\n\n[用户已选择图片生成] 请实际使用内置 image-generator 子代理或 generate_image '
@@ -1313,6 +1605,9 @@ class Console:
                                    '仅进行图片任务，不浏览网页、不读取凭据、不修改其他用户项目。'
                                    '生成文件保存到当前工作目录，或保留在本次官方会话的 brain 产物目录。'
                                    '最终用 Markdown 图片引用实际绝对路径。若生成失败，明确说明，切勿假装成功。')
+                if turn.get('roundtable') is not None or turn.get('roundtable_reset') is True:
+                    turn['worker_prompt'] = cli_prompt
+                    (folder / 'request.txt').write_text(cli_prompt, encoding='utf-8')
                 command = [self.binary, '-p', cli_prompt, '--output-format', 'stream-json',
                            '--model', turn['model'], '--mode', 'accept-edits' if image_task else 'plan', '--sandbox',
                            '--print-timeout', str(self.timeout) + 's']
@@ -1451,6 +1746,7 @@ class Console:
                         pass
                     proc.stdout.close()
                     proc.stderr.close()
+                bark_payload = None
                 with self.lock:
                     self.processes.pop(tid, None)
                     if not turn.get('images'):
@@ -1471,8 +1767,9 @@ class Console:
                             'started_at': attempt_started_at, 'ended_at': turn['ended_at'], 'elapsed': attempt_elapsed,
                             'usage': copy.deepcopy(turn.get('usage') or {}), 'usage_scope': turn.get('usage_scope', 'unknown')})
                     turn['elapsed'] = round(sum(a['elapsed'] for a in turn.get('attempts', [])), 2) if turn.get('attempts') else attempt_elapsed
+                    quota_turn = dict(turn, prompt=turn.get('worker_prompt', turn['prompt']))
                     current_quota = (turn['status'] == 'failed' and quota_rejection(turn.get('error'))
-                                     and guard.current_quota_rejection(turn, self.activity.root))
+                                     and guard.current_quota_rejection(quota_turn, self.activity.root))
                     if current_quota:
                         self.mark_quota_rejection(turn['model'], turn['error'], turn.get('account_check'))
                     account_now = self.health.get('account') or {}
@@ -1481,7 +1778,7 @@ class Console:
                     eligible = (not self.stopping and current_quota and turn['status'] == 'failed' and turn.get('fallback_enabled')
                                 and len(turn.get('attempts', [])) == 1 and same_account
                                 and guard.permits_retry(turn, turn.get('exit_code'), stderr_denied)
-                                and guard.official_rejection(turn, self.activity.root))
+                                and guard.official_rejection(quota_turn, self.activity.root))
                     if eligible:
                         try:
                             next_model = self.choose_turn_model(turn, retry=True)
@@ -1524,11 +1821,19 @@ class Console:
                     conv['updated_at'] = now()
                     write_json(folder / 'result.json', turn)
                     self.save(conv)
+                    if retry_item is None:
+                        bark_payload = bark_notification_payload(turn['status'], conv['id'], turn['id'], conv['title'])
                     label = {'completed': '任务完成', 'cancelled': '任务已停止', 'failed': '任务未完成'}.get(turn['status'], turn['status'])
                     announce('■ ' + label + ' · ' + str(turn['elapsed']) + ' 秒')
                     if not self.stopping:
                         pending_count = sum(t['status'] in BUSY for c in self.state['conversations'] for t in c['turns'])
                         announce('等待处理剩余 ' + str(pending_count) + ' 项任务。' if pending_count else '待命中 · 没有模型任务在运行。')
+                if bark_payload is not None and self.notification_sender is not None:
+                    try:
+                        self.notification_sender(bark_payload)
+                    except Exception:
+                        # Also isolate future adapters from the already-saved result.
+                        pass
 
     @staticmethod
     def artifact_directory(conv):
@@ -1563,7 +1868,12 @@ class Console:
                         turn.update(status='cancelling', error='服务正在关闭。')
             for proc in list(self.processes.values()) + list(self.health_processes.values()):
                 self.terminate(proc)
-            self.save()
+            try:
+                self.save()
+            except (OSError, ValueError) as error:
+                # Broken metadata or disk failures must not prevent foreground
+                # teardown or leave the worker thread waiting forever.
+                announce('关闭时保存未完成：' + str(error)[:160])
         self.jobs.put(None)
         if threading.current_thread() is not self.worker_thread:
             self.worker_thread.join(timeout=5)
@@ -1611,10 +1921,28 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get('If-None-Match') == tag:
                 return self.respond(304, b'', extra={'ETag': tag})
             return self.respond(200, app.snapshot(summaries=summaries), extra={'ETag': tag})
-        if path == '/api/updates':
-            return self.respond(200, app.software_updates.snapshot())
         if path == '/api/service':
             return self.respond(200, app.service_info())
+        if path == '/api/console-startup':
+            return self.respond(200, app.console_startup_info())
+        match = re.fullmatch(r'/api/codex/([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})/collaboration', path)
+        if match:
+            try:
+                return self.respond(200, app.multi_ai_policy(match[1]))
+            except KeyError:
+                return self.respond(404, {'error': '本聊天尚未绑定。'})
+            except ValueError as error:
+                return self.respond(409, {'error': str(error)})
+        match = re.fullmatch(r'/api/codex/([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})/roundtable', path)
+        if match:
+            try:
+                return self.respond(200, app.roundtable_policy(match[1]))
+            except KeyError:
+                return self.respond(404, {'error': '本聊天尚未绑定。'})
+            except ValueError as error:
+                return self.respond(409, {'error': str(error)})
+        if path == '/api/updates':
+            return self.respond(200, app.software_updates.snapshot())
         match=re.fullmatch(r'/api/configuration/backups/([a-f0-9]{32})',path)
         if match:
             file=app.data/'configuration-backups'/(match[1]+'.json')
@@ -1681,7 +2009,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.respond(404, {'error': str(exc)})
             with app.lock:
                 conv = app.conversation(match[1])
-                return self.respond(200, copy.deepcopy(conv)) if conv else self.respond(404, {'error': '对话不存在。'})
+                return self.respond(200, app.conversation_metadata(conv)) if conv else self.respond(404, {'error': '对话不存在。'})
         match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/turns/([a-f0-9]{32})', path)
         if match:
             with app.lock:
@@ -1830,6 +2158,8 @@ class Handler(BaseHTTPRequestHandler):
                 body.get('apply_window',False),body.get('revision'),body.get('acknowledge'))
         if path == '/api/updates/preferences':
             return 200, app.software_updates.set_preferences(body)
+        if path == '/api/console-startup':
+            return 200, app.set_console_startup(body)
         if path == '/api/updates/action':
             return 202, app.software_updates.request(body.get('action'))
         if path == '/api/conversations':
@@ -1869,6 +2199,18 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/collaboration', path)
         if match:
             return 200, app.set_collaboration(match[1], body.get('enabled'))
+        match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/multi-ai-collaboration', path)
+        if match:
+            return 200, app.set_multi_ai_collaboration(match[1], body)
+        match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/roundtable', path)
+        if match:
+            return 200, app.set_roundtable(match[1], body)
+        match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/roundtable/messages', path)
+        if match:
+            return 200, app.record_roundtable_message(match[1], body)
+        match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/console-startup', path)
+        if match:
+            return 200, app.set_auto_start_console(match[1], body)
         match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/auto-open', path)
         if match:
             return 200, app.set_auto_open_activity(match[1], body.get('enabled'))
@@ -1893,6 +2235,17 @@ class Handler(BaseHTTPRequestHandler):
         super().log_message(fmt, *args)
 
 
+def foreground_coordination_path(data):
+    """Keep isolated profiles from publishing over the installed policy mirror."""
+    data = Path(data).expanduser().resolve()
+    shared = default_policy_path()
+    # Portable POSIX installs use ROOT/data. Per-user installed layouts (notably
+    # Windows) use the standard policy directory's data child. Other --data
+    # profiles own their mirror, which service metadata reports to consumers.
+    normal_data = {(ROOT / 'data').resolve(), (shared.parent / 'data').resolve()}
+    return shared if data in normal_data else data / 'coordination.json'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=8765)
@@ -1914,7 +2267,8 @@ def main():
     try:
         original_proxy = {key: os.environ.get(key) for key in PROXY_KEYS}
         network = configure_proxy()
-        app = Console(args.data, args.agy_bin, import_history=args.import_legacy_history)
+        app = Console(args.data, args.agy_bin, import_history=args.import_legacy_history,
+                      coordination_path=foreground_coordination_path(args.data), notification_sender=notify_bark)
     except Exception:
         server.server_close()
         raise

@@ -1,3 +1,5 @@
+> Preview.8 → preview.13 requires a complete package: the old bootstrap does not accept multi_ai_collaboration.py. Program-only updates are disabled by default for this release candidate.
+
 # Agy Console 更新协议 v1
 
 程序版本从 `VERSION` 读取，采用语义化版本，例如 `0.1.0-preview.1`。每次正式交付递增版本，GitHub 标签为 `v` 加该版本。稳定通道忽略预览版本，预览通道可接收更高版本；禁止自动降级或应用相同版本。

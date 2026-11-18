@@ -43,7 +43,8 @@ class ConfigurationTests(unittest.TestCase):
         bound=self.app.bind_codex(THREAD,'Private title');self.conv=self.app.conversation(bound['id'])
         self.conv.update(agy_id='private-session',model_preferences={'text':FLASH,'image':''},
             fallback_preferences={'text':{'enabled':True,'models':[FLASH,ARGON]},'image':{'enabled':False,'models':[]}},
-            gpt_collaboration=False,auto_open_activity=False)
+            auto_open_activity=False)
+        self.app.set_collaboration(self.conv['id'], False)
         self.app.state['preferred_model']=FLASH
         self.app.save(self.conv)
     def tearDown(self):
@@ -115,6 +116,31 @@ class ConfigurationTests(unittest.TestCase):
         preview=self.preview(doc);self.app.set_preferred_model(ARGON)
         with self.assertRaises(ConflictError):self.apply(doc,preview)
         self.assertEqual(self.app.state['preferred_model'],ARGON)
+
+    def test_multi_ai_import_targets_selected_thread_and_preserves_pauses(self):
+        self.app.set_multi_ai_collaboration(self.conv['id'], {'codex_thread_id':THREAD,
+            'enabled':False, 'providers':{'muse':{'enabled':True},'agy':{'enabled':False}}})
+        doc=self.document();other=self.app.bind_codex(binding_fixtures.OTHER)
+        original=copy.deepcopy(self.app.multi_ai_policy(THREAD))
+        preview=self.app.preview_configuration(doc,other['id'],True)
+        self.app.import_configuration(doc,{},other['id'],True,preview['revision'],True)
+        target=self.app.multi_ai_policy(binding_fixtures.OTHER)
+        self.assertEqual(target['codex_thread_id'],binding_fixtures.OTHER)
+        self.assertFalse(target['enabled']);self.assertFalse(target['providers']['agy']['enabled'])
+        self.assertTrue(target['providers']['muse']['enabled'])
+        self.assertEqual(self.app.multi_ai_policy(THREAD),original)
+        restored=self.app.bind_codex(binding_fixtures.OTHER)
+        self.assertFalse(restored['gpt_collaboration'])
+
+    def test_failed_configuration_transaction_restores_offline_policy(self):
+        before=self.app.multi_ai_policy(THREAD);doc=self.document()
+        doc['settings']['window']['multi_ai_collaboration']['enabled']=True
+        with patch.object(self.app.software_updates,'set_preferences',side_effect=OSError('simulated update prefs failure')):
+            with self.assertRaises(OSError):self.apply(doc)
+        offline=json.loads(self.app.coordination.path.read_text())
+        self.assertTrue(offline['ready'])
+        self.assertEqual(self.app.multi_ai_policy(THREAD),before)
+        self.assertEqual(offline['threads'][THREAD]['multi_ai_collaboration'],before)
 
     def test_update_preference_write_failure_restores_both_files_and_pending_marker(self):
         manager=self.app.software_updates;pending=manager.cache/'pending.json';pending.write_text('{"version":"9.0.0"}')

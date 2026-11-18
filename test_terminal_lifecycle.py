@@ -1,6 +1,5 @@
 """Real controlling-terminal lifecycle checks; fake CLI, no model requests."""
 import errno
-import atexit
 import http.client
 import json
 import os
@@ -39,45 +38,15 @@ else:
 '''
 
 
-PTY_EXEC = None
-PTY_BUILD = None
-
-
-def terminal_exec_helper():
-    """Enter the PTY in native code; never run Python after forkpty()."""
-    global PTY_EXEC, PTY_BUILD
-    if PTY_EXEC is None:
-        PTY_BUILD = tempfile.TemporaryDirectory(prefix='agy-test-pty-exec-')
-        atexit.register(PTY_BUILD.cleanup)
-        source = Path(PTY_BUILD.name) / 'pty_exec.c'
-        PTY_EXEC = Path(PTY_BUILD.name) / 'pty-exec'
-        source.write_text('''#include <sys/ioctl.h>
-#include <unistd.h>
-#include <stdio.h>
-int main(int argc, char **argv) {
-    if (argc < 2) return 2;
-    if (ioctl(STDIN_FILENO, TIOCSCTTY, 0) == -1) { perror("TIOCSCTTY"); return 3; }
-    if (tcsetpgrp(STDIN_FILENO, getpgrp()) == -1) { perror("tcsetpgrp"); return 4; }
-    execvp(argv[1], argv + 1);
-    perror("execvp"); return 127;
-}
-''')
-        subprocess.run(['cc', '-O2', str(source), '-o', str(PTY_EXEC)], check=True,
-                       capture_output=True, text=True, timeout=30)
-    return str(PTY_EXEC)
-
-
 class TerminalProcess:
     """A child with an actual controlling PTY, not merely tty-looking pipes."""
     def __init__(self, command, env):
-        helper = terminal_exec_helper()
-        self.master, slave = pty.openpty()
-        try:
-            self.process = subprocess.Popen([helper] + command, stdin=slave, stdout=slave, stderr=slave,
-                                            env=env, start_new_session=True)
-        finally:
-            os.close(slave)
-        self.pid = self.process.pid
+        self.pid, self.master = pty.fork()
+        if self.pid == 0:
+            try:
+                os.execvpe(command[0], command, env)
+            finally:
+                os._exit(127)
         os.set_blocking(self.master, False)
         self.output = bytearray()
         self.returncode = None
@@ -99,7 +68,9 @@ class TerminalProcess:
     def poll(self):
         self.drain()
         if self.returncode is None:
-            self.returncode = self.process.poll()
+            pid, status = os.waitpid(self.pid, os.WNOHANG)
+            if pid:
+                self.returncode = os.waitstatus_to_exitcode(status)
         return self.returncode
 
     def wait(self, timeout=8):
@@ -187,9 +158,7 @@ class TerminalLifecycleTests(unittest.TestCase):
             if check():
                 return
             time.sleep(.03)
-        self.fail(message + '\n' + '\n'.join(
-            'PTY pid=' + str(p.pid) + ' exit=' + str(p.poll()) + '\n' + p.output.decode(errors='replace')
-            for p in self.terminals))
+        self.fail(message + '\n' + '\n'.join(p.output.decode(errors='replace') for p in self.terminals))
 
     def request(self, method, path, body=None):
         client = http.client.HTTPConnection('127.0.0.1', self.port, timeout=1)

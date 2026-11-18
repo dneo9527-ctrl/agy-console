@@ -2,13 +2,13 @@
   "schema_version": 1,
   "product": "Agy Console",
   "status": "ready",
-  "version": "0.1.0-preview.8",
+  "version": "0.1.0-preview.13",
   "repository": "dneo9527-ctrl/agy-console",
   "visibility": "public",
   "license": "MIT",
-  "authorization_reference": "Owner authorized public MIT releases and handed completed .8 fixes to the release workflow, 2026-11-17",
+  "authorization_reference": "Existing user-approved public MIT Agy and matching Skill complete GitHub distribution, verified by publisher; no new account or platform authorization.",
   "source_frozen": true,
-  "source_manifest_sha256": "13b257adf40ae7296a99493d251fc5415dec4f1e19f2f4366724fbd194250542",
+  "source_manifest_sha256": "d91f5a0ca117dd0d40fa547c72a0d91d610edfbf2ab25d1377d4a4e5a5b09a68",
   "channel": "preview",
   "platforms": [
     "macos-source",
@@ -16,11 +16,13 @@
     "windows-x64"
   ],
   "platform_verification": {
-    "macos-arm64": "pending_exact_commit_ci",
-    "macos-x64": "pending_exact_commit_ci",
-    "linux-x64": "pending_exact_commit_ci",
-    "windows-x64": "pending_exact_commit_ci"
+    "macos-arm64": "pending_final_commit_ci_and_native_acceptance",
+    "macos-x64": "pending_final_commit_ci_and_native_acceptance",
+    "linux-x64": "pending_final_commit_ci_and_native_acceptance",
+    "windows-x64": "pending_final_commit_ci_and_native_acceptance"
   },
   "updater_contract": "agreed",
-  "publish_authorized": true
+  "publish_authorized": true,
+  "initial_upgrade": "full_package_required_from_preview8",
+  "automatic_cross_web_roundtable": false
 }

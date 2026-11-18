@@ -14,6 +14,7 @@ import zipfile
 from collaboration_review import validate_review
 from quota_failover import clean_order, clean_fallback
 from software_updates import SoftwareUpdates
+from multi_ai_collaboration import canonical as collaboration_policy, portable as portable_collaboration, validate as validate_collaboration, portable_roundtable, validate_roundtable, validate_roundtable_messages
 
 MAX_UPLOAD = 64 * 1024 * 1024
 MAX_EXPANDED = 512 * 1024 * 1024
@@ -30,6 +31,11 @@ def configuration_document(state, updates, ui, window=None, app_version=''):
     if window is not None:
         window_settings = {key: window[key] for key in
                            ('model_preferences', 'fallback_preferences', 'gpt_collaboration', 'auto_open_activity') if key in window}
+        if window.get('codex_thread_id'):
+            window_settings['multi_ai_collaboration'] = portable_collaboration(window)
+            window_settings['roundtable'] = portable_roundtable(window)
+            value = collaboration_policy(window)
+            window_settings['gpt_collaboration'] = value['enabled'] and value['providers']['agy']['enabled']
     return validate_configuration({'format': 'agy-console-settings', 'schema': 1,
         'app_version': app_version, 'exported_at': datetime.now(timezone.utc).isoformat(),
         'settings': {'global': {'preferred_model': state.get('preferred_model', ''), 'model_order': state.get('model_order', [])},
@@ -59,7 +65,11 @@ def validate_configuration(value):
     SoftwareUpdates.validate_preferences(settings['updates'])
     window=settings['window']
     if window is not None:
-        obj(window, ('model_preferences','fallback_preferences','gpt_collaboration','auto_open_activity'))
+        obj(window, ('model_preferences','fallback_preferences','gpt_collaboration','auto_open_activity','multi_ai_collaboration','roundtable'))
+        if 'multi_ai_collaboration' in window:
+            validate_collaboration(window['multi_ai_collaboration'], portable=True)
+        if 'roundtable' in window:
+            validate_roundtable(window['roundtable'], portable=True)
         for key in ('model_preferences','fallback_preferences'):
             obj(window.get(key,{}), ('text','image'))
         for selected in window.get('model_preferences',{}).values():
@@ -107,18 +117,28 @@ def validate_state(value):
             raise ValueError('备份中的候补设置无效。')
         for settings in fallback.values():
             clean_fallback(settings)
-        for key in ('created_at', 'updated_at', 'deleted_at', 'gpt_collaboration_updated_at', 'auto_open_activity_updated_at'):
+        for key in ('created_at', 'updated_at', 'deleted_at', 'gpt_collaboration_updated_at', 'auto_open_activity_updated_at', 'multi_ai_collaboration_updated_at', 'roundtable_updated_at'):
             if conv.get(key) is not None and (not isinstance(conv[key], str) or len(conv[key]) > 100):
                 raise ValueError('备份中的聊天日期无效。')
         if 'gpt_collaboration' in conv and type(conv['gpt_collaboration']) is not bool:
             raise ValueError('备份中的协作设置无效。')
         if 'auto_open_activity' in conv and type(conv['auto_open_activity']) is not bool:
             raise ValueError('备份中的自动打开设置无效。')
+        if 'auto_start_console' in conv and type(conv['auto_start_console']) is not bool:
+            raise ValueError('备份中的自动启动设置无效。')
         thread = conv.get('codex_thread_id')
         if thread is not None:
             if not isinstance(thread, str) or not UUID.fullmatch(thread) or thread in threads:
                 raise ValueError('备份中的 Codex 绑定重复或无效。')
             threads.add(thread)
+        if 'multi_ai_collaboration' in conv:
+            if not thread:
+                raise ValueError('多 AI 协作必须属于固定 Codex 聊天。')
+            validate_collaboration(conv['multi_ai_collaboration'], thread)
+        if 'roundtable' in conv:
+            if not thread:
+                raise ValueError('圆桌主持必须属于固定 Codex 聊天。')
+            validate_roundtable(conv['roundtable'], thread)
         branches = conv.get('branches')
         if not isinstance(branches, dict) or len(branches) > 16:
             raise ValueError('备份中的工作会话无效。')
@@ -139,12 +159,25 @@ def validate_state(value):
             raise ValueError('备份中的主会话缺少工作会话。')
         if not isinstance(conv.get('turns'), list) or len(conv['turns']) > 20000:
             raise ValueError('备份中的聊天记录无效。')
+        validate_roundtable_messages(conv)
         for turn in conv['turns']:
             if (not isinstance(turn, dict) or not isinstance(turn.get('id'), str) or not HEX.fullmatch(turn['id'])
                     or turn['id'] in turn_ids or turn.get('branch') not in branches
                     or turn.get('status') not in ('completed', 'failed', 'cancelled', 'interrupted')
                     or not isinstance(turn.get('prompt'), str) or not isinstance(turn.get('response'), str)):
                 raise ValueError('备份中存在重复、未结束或无效的任务记录。')
+            if 'roundtable_reset' in turn and (type(turn['roundtable_reset']) is not bool
+                    or not thread or turn.get('source') != 'codex' or 'roundtable' in turn):
+                raise ValueError('备份中的日常协助角色重置无效。')
+            if 'roundtable' in turn:
+                if not thread:
+                    raise ValueError('圆桌任务必须属于固定 Codex 聊天。')
+                validate_roundtable(turn['roundtable'], thread)
+                expected_role = 'host' if turn['roundtable']['host'] == 'agy' else 'participant'
+                if turn.get('roundtable_role') != expected_role:
+                    raise ValueError('备份中的圆桌任务角色无效。')
+            elif 'roundtable_role' in turn:
+                raise ValueError('备份中的圆桌任务角色缺少设置快照。')
             turn_ids.add(turn['id'])
             if len(turn_ids) > 25000:
                 raise ValueError('备份任务数超过限制。')

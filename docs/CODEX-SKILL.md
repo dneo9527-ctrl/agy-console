@@ -1,5 +1,7 @@
 # 安装 Codex 配套 Skill
 
+本版完整包和独立 Skill 包同时包含 `agy-console` 配套入口与严格对应的 `external-ai-team` preview.3 八文件版本。二者均需显式安装；程序更新不会改写 Codex home。多 AI 提供方开关／受控前台启动由后者按当前聊天策略读取，自动跨网页圆桌仍未接入。
+
 面板负责运行任务，`agy-console` Skill 负责指导 Codex 在当前聊天中调用面板。完整源码、Mac/Linux 源码预览和 Windows 完整包均包含 Skill、分发脚本和安装工具。仅打开网页不会让闲置的 Codex 自动执行工作。
 
 先把面板放到固定的可写目录，安装并登录官方 Antigravity CLI。Skill 不包含账号，不会启动服务或调用模型；运行任务时仍需保持面板的前台终端打开。
@@ -28,7 +30,7 @@ python3 scripts/install_codex_skill.py --codex-home /path/to/codex-home
 
 Skill 固定连接到安装时选择的面板目录与 Python。移动面板、更换运行时或更新 Skill 后，重新运行安装器刷新连接。只替换带本工具安装标记的同名 Skill，旧副本保留为备份；遇到其他来源的同名 Skill 或链接目录会停止。
 
-Release 中的 `AgyConsole-0.1.0-preview.8-codex-skill.zip` 适合已有面板的用户。完整解压后，将下面命令的路径换成现有面板目录；不要直接把模板复制进 Codex 的 skills 目录：
+Release 中的 `AgyConsole-0.1.0-preview.13-codex-skill.zip` 适合已有兼容面板的用户。完整解压后，将下面命令的路径换成现有面板目录；不要直接把模板复制进 Codex 的 skills 目录：
 
 ```sh
 python3 scripts/install_codex_skill.py --console-root /path/to/AgyConsole --enable-default
@@ -37,6 +39,26 @@ python3 scripts/install_codex_skill.py --console-root /path/to/AgyConsole --enab
 Windows 使用现有面板的 `runtime\python.exe` 运行该脚本，并通过 `--console-root` 指向包含 `app\bridge.py` 的目录。包内也提供 `windows\install_codex_skill.py`。安装后的 `connection.json` 只保存在本机，不随发行包分发。
 
 程序内置更新只替换面板程序，保留稳定启动器和用户安装的 Skill。Skill 的安装或更新通过上述入口显式执行，不混入程序更新事务。
+
+## external-ai-team 的显式安装
+
+Mac/Linux 完整包内执行：
+
+```sh
+python3 skills/external-ai-team/install.py --codex-home /path/to/codex-home
+```
+
+Windows 完整安装／便携包内执行：
+
+```powershell
+& '.\runtime\python.exe' '.\skills\external-ai-team\install.py' --codex-home 'D:\Codex Home'
+```
+
+如果下载独立 Skill 包，Windows 版本位于 `windows/skills/external-ai-team`，使用现有面板的 Python 执行。已有 `external-ai-team` 目标会被拒绝，不覆盖或删除；保留旧版本并按自己的 Skill 维护流程确认替换后再安装。本步骤不改默认规则、审批、提供方、模型、草稿或自动启动偏好。
+
+重新打开聊天后按 `$external-ai-team` 使用。先确认当前聊天的提供方和项目会话，再调用；单纯开启多个提供方不会群发。需手动配置受支持部署的连接位置，包中不包含本机私有 adapter、真实策略或账户。完整八文件版本也随 [codex-skills preview.3](https://github.com/dneo9527-ctrl/codex-skills/releases/tag/v0.1.0-preview.3) 同步发行。
+
+本版圆桌角色、真实发言同步和紧凑界面可由活跃 Codex 依契约使用；当前 Skill 不自动执行跨网页两轮圆桌，不采集网页历史，也不唤醒闲置聊天。
 
 ## 偏好、验证与移除
 

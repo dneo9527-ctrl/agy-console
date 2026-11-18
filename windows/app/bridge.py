@@ -16,12 +16,49 @@ ROOT = Path(__file__).resolve().parent
 UUID = re.compile(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}')
 BUSY = {'queued', 'running', 'cancelling'}
 from model_policy import DEFAULT_MODEL, default_model
+from multi_ai_collaboration import validate_roundtable, roundtable_plan
+
+
+def multi_ai_metadata(conversation, thread_id, features):
+    """Validate advertised metadata rather than turning malformed pauses on."""
+    if not features.get('multi_ai_collaboration'):
+        return None
+    value = conversation.get('multi_ai_collaboration')
+    if (not isinstance(value, dict) or set(value) != {'schema_version', 'codex_thread_id', 'enabled', 'providers'}
+            or type(value.get('schema_version')) is not int or value['schema_version'] != 1
+            or value.get('codex_thread_id') != thread_id or type(value.get('enabled')) is not bool):
+        raise ValueError('多 AI 协作状态无法核实，未派发；请在当前固定聊天检查设置。')
+    providers = value.get('providers')
+    if (not isinstance(providers, dict) or set(providers) != {'agy', 'muse', 'claude'}
+            or any(not isinstance(item, dict) or set(item) != {'enabled'} or type(item.get('enabled')) is not bool
+                   for item in providers.values())):
+        raise ValueError('多 AI 提供方状态无效，未派发。')
+    return json.loads(json.dumps(value))
 
 
 def panel_action(conversation, url):
     enabled = conversation.get('auto_open_activity') is not False
     return {'type': 'show_existing_browser' if enabled else 'none', 'enabled': enabled,
             'url': url, 'placement': 'right', 'verified_visible': False}
+
+
+def roundtable_metadata(conversation, thread_id, features):
+    """A host preference is never proof that the proposed meeting happened."""
+    if not features.get('roundtable_host'):
+        return None, None
+    policy = multi_ai_metadata(conversation, thread_id, features)
+    if policy is None:
+        raise ValueError('圆桌协作需要可核实的本聊天多 AI 设置。')
+    value = validate_roundtable(conversation.get('roundtable'), thread_id)
+    plan = conversation.get('roundtable_plan')
+    expected = roundtable_plan({'codex_thread_id': thread_id,
+                               'multi_ai_collaboration': policy, 'roundtable': value})
+    if (not isinstance(plan, dict) or set(plan) != set(expected)
+            or type(plan.get('schema_version')) is not int
+            or type(plan.get('rounds')) is not int
+            or type(plan.get('ready')) is not bool or plan != expected):
+        raise ValueError('圆桌主持或参与计划无法核实，未派发。')
+    return value, json.loads(json.dumps(plan))
 
 
 class TokenParser(HTMLParser):
@@ -106,9 +143,15 @@ def main():
     parser.add_argument('--no-wait', action='store_true')
     parser.add_argument('--ensure', action='store_true', help='Ensure this Codex chat has a fixed entry without starting a model task')
     parser.add_argument('--collaboration', choices=('on', 'off'), help='With --ensure, save this fixed chat collaboration preference without calling a model')
+    parser.add_argument('--provider', choices=('agy', 'muse', 'claude'), help='Provider preference to change with --ensure')
+    parser.add_argument('--provider-collaboration', choices=('on', 'off'), help='With --ensure --provider, change only that provider; never resumes the master switch')
+    parser.add_argument('--auto-start', choices=('on', 'off'), help='With --ensure, save this chat foreground-launch preference; does not execute the launcher')
+    parser.add_argument('--host', choices=('codex', 'agy', 'muse', 'claude'), help='With --ensure, save this chat moderator and select roundtable mode; starts no meeting')
+    parser.add_argument('--collaboration-mode', choices=('assist', 'roundtable'), help='With --ensure, save bounded assistance or roundtable mode without dispatch')
     parser.add_argument('--auto-open', choices=('on', 'off'), help='With --ensure, save whether calls should reveal this chat activity page; calls no model')
     parser.add_argument('--review-turn', help='Record explicit Codex decisions for this existing turn; calls no model')
     parser.add_argument('--review-file', help='JSON review with summary, items and verification')
+    parser.add_argument('--record-message', help='Record one genuinely observed roundtable contribution from a JSON file; calls no model')
     args = parser.parse_args()
     if not args.thread_id or not UUID.fullmatch(args.thread_id):
         parser.error('需要当前 Codex 聊天 ID；请使用 CODEX_THREAD_ID 或 --thread-id。')
@@ -116,8 +159,35 @@ def main():
         parser.error('--branch 需为最多40位的小写字母、数字、横线或下划线。')
     if args.collaboration and not args.ensure:
         parser.error('--collaboration 仅用于 --ensure，不会启动模型。')
+    if bool(args.provider) != bool(args.provider_collaboration) or (args.provider and not args.ensure):
+        parser.error('提供方开关需同时使用 --ensure --provider 和 --provider-collaboration。')
+    if args.auto_start and not args.ensure:
+        parser.error('--auto-start 仅用于 --ensure，不会执行启动入口。')
+    if (args.host or args.collaboration_mode) and not args.ensure:
+        parser.error('--host 和 --collaboration-mode 仅用于 --ensure，不会开始会议。')
+    if args.ensure and (args.task_file or args.import_result or args.stage_import):
+        parser.error('--ensure 只读或保存偏好，不能混入任务派发/导入。')
     if args.auto_open and not args.ensure:
         parser.error('--auto-open 仅用于 --ensure，不会启动模型。')
+    if args.record_message:
+        if (args.task_file or args.ensure or args.import_result or args.stage_import
+                or args.review_turn or args.review_file or args.context or args.model
+                or args.out or args.branch or args.branch_title or args.no_wait):
+            parser.error('--record-message 只记录已收到的真实发言，不能与任务、设置或导入混用。')
+        path = Path(args.record_message)
+        if not path.is_file() or path.stat().st_size > 65536:
+            parser.error('圆桌发言文件需为64KB以内的 JSON。')
+        body = json.loads(path.read_text(encoding='utf-8'))
+        fields = {'codex_thread_id', 'anchor_turn_id', 'provider', 'stage', 'text', 'source_url', 'source_id'}
+        if not isinstance(body, dict) or set(body) != fields or body.get('codex_thread_id') != args.thread_id:
+            parser.error('圆桌发言必须完整并属于当前 Codex 聊天。')
+        client = Client(args.url)
+        conv = client.bind(args.thread_id)
+        if not client.features.get('roundtable_messages'):
+            raise ValueError('统一圆桌聊天需先从原前台控制台加载新版后台。')
+        recorded = client.request('/api/conversations/' + conv['id'] + '/roundtable/messages', body)
+        print(json.dumps(recorded, ensure_ascii=False))
+        return 0
     if args.review_turn or args.review_file:
         if (not args.review_turn or not args.review_file or not re.fullmatch(r'[a-f0-9]{32}', args.review_turn)
                 or args.task_file or args.ensure or args.import_result):
@@ -143,18 +213,49 @@ def main():
                 raise ValueError('协作开关需载入新版后台，请正常重开桌面 Antigravity.command。')
             result = client.request('/api/conversations/' + conv['id'] + '/collaboration', {'enabled': args.collaboration == 'on'})
             conv['gpt_collaboration'] = result['enabled']
+        if args.provider:
+            if not client.features.get('multi_ai_collaboration'):
+                raise ValueError('提供方开关需先从原前台入口载入新版后台。')
+            client.request('/api/conversations/' + conv['id'] + '/multi-ai-collaboration',
+                           {'codex_thread_id': args.thread_id,
+                            'providers': {args.provider: {'enabled': args.provider_collaboration == 'on'}}})
+        if args.auto_start:
+            if not client.features.get('console_startup'):
+                raise ValueError('离线启动设置需先从原前台入口载入新版后台。')
+            client.request('/api/conversations/' + conv['id'] + '/console-startup',
+                           {'codex_thread_id': args.thread_id, 'auto_start_console': args.auto_start == 'on'})
+        if args.host or args.collaboration_mode:
+            if not client.features.get('roundtable_host'):
+                raise ValueError('主持设置需先从原前台入口载入新版后台。')
+            changes = {'codex_thread_id': args.thread_id}
+            if args.host:
+                changes.update(host=args.host, mode=args.collaboration_mode or 'roundtable')
+            elif args.collaboration_mode:
+                changes['mode'] = args.collaboration_mode
+            client.request('/api/conversations/' + conv['id'] + '/roundtable', changes)
         if args.auto_open:
             if not client.features.get('panel_auto_open'):
                 raise ValueError('自动打开开关需先载入新版后台。')
             result = client.request('/api/conversations/' + conv['id'] + '/auto-open', {'enabled': args.auto_open == 'on'})
             conv['auto_open_activity'] = result['enabled']
+        if args.collaboration or args.provider or args.auto_start or args.host or args.collaboration_mode:
+            conv = client.bind(args.thread_id, args.title)
+        multi = multi_ai_metadata(conv, args.thread_id, client.features)
+        meeting, plan = roundtable_metadata(conv, args.thread_id, client.features)
         lane = (conv.get('branches') or {}).get(args.branch) if args.branch else None
         print(json.dumps({'bound':True, 'codex_thread_id':args.thread_id, 'console_conversation_id':conv['id'],
                           'agy_id':(lane or {}).get('agy_id') if args.branch else conv['agy_id'],
                           'branch_id':args.branch or conv.get('primary_branch'), 'branch_exists':bool(lane) if args.branch else bool(conv.get('primary_branch')),
                           'url':client.url+'/?codex='+args.thread_id+('&session='+args.branch if lane else ''),
-                          'collaboration_enabled':conv.get('gpt_collaboration') is not False,
+                          'collaboration_enabled':(multi['enabled'] and multi['providers']['agy']['enabled']) if multi is not None else conv.get('gpt_collaboration') is not False,
                           'collaboration_supported':bool(client.features.get('gpt_collaboration')),
+                          'multi_ai_collaboration_supported':bool(client.features.get('multi_ai_collaboration')),
+                          **({'multi_ai_collaboration':multi} if multi is not None else {}),
+                          'roundtable_host_supported':bool(client.features.get('roundtable_host')),
+                          **({'roundtable':meeting, 'roundtable_plan':plan} if meeting is not None else {}),
+                          'console_startup_supported':bool(client.features.get('console_startup')),
+                          'auto_start_console':conv.get('auto_start_console') is True,
+                          **({'console_startup':conv['console_startup']} if client.features.get('console_startup') and isinstance(conv.get('console_startup'),dict) else {}),
                           'auto_open_activity':conv.get('auto_open_activity') is not False,
                           'auto_open_supported':bool(client.features.get('panel_auto_open')),
                           'panel_action': panel_action(conv, client.url+'/?codex='+args.thread_id+('&session='+args.branch if lane else '')),
@@ -209,14 +310,21 @@ def main():
     if args.import_result:
         print(json.dumps({'imported': True, 'conversation_id': conv['id'], 'agy_id': conv['agy_id'], 'url': fixed_url}, ensure_ascii=False))
         return 0
-    if conv.get('gpt_collaboration') is False:
-        raise ValueError('这条聊天已暂停 GPT 协作。请在固定页面重新开启；仍可在网页手动给 Agy 发任务。')
+    multi = multi_ai_metadata(conv, args.thread_id, client.features)
+    if multi is not None and (not multi['enabled'] or not multi['providers']['agy']['enabled']):
+        raise ValueError('这条聊天已暂停多 AI 协作或 Agy；未派发新的任务，已有任务不受影响。')
+    if multi is None and conv.get('gpt_collaboration') is False:
+        raise ValueError('这条聊天已暂停协作。请在固定页面重新开启；仍可在网页手动给 Agy 发任务。')
+    meeting, plan = roundtable_metadata(conv, args.thread_id, client.features)
+    if meeting is not None and meeting['mode'] == 'roundtable' and not plan['ready']:
+        raise ValueError('圆桌主持或参与方已暂停，未派发；请检查当前聊天设置。')
     selection_state = client.request('/api/state?summary=1') if not args.model and not client.features.get('window_models') else {}
     model = args.model or ('' if client.features.get('window_models') else default_model(selection_state))
     turn = client.request('/api/conversations/' + conv['id'] + '/turns', {'prompt':prompt, 'model':model, 'kind':args.kind, 'codex_dispatch':True,
                           **({'branch':args.branch, 'branch_title':args.branch_title} if args.branch else {})})
     print(json.dumps({'submitted': True, 'url': fixed_url, 'turn_id': turn['id'], 'model': turn.get('model', model),
                       'model_selection': 'explicit' if args.model else 'window_or_global' if client.features.get('window_models') else 'global_default' if selection_state.get('preferred_model') else 'available_quota_default',
+                      **({'roundtable':turn['roundtable'], 'roundtable_role':turn.get('roundtable_role')} if 'roundtable' in turn else {}),
                       'panel_action': panel_action(conv, fixed_url)}, ensure_ascii=False), flush=True)
     if args.no_wait:
         return 0

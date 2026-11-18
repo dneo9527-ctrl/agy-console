@@ -1,3 +1,5 @@
+> Local development candidate: **0.1.0-preview.13**, not yet published. See [scope, full-upgrade requirements and verification](docs/DEVELOPMENT-PREVIEW13.md). The historical release evidence below remains preview.8.
+
 # Agy Console v0.1.0-preview.8 发布范围
 
 公开仓库 `dneo9527-ctrl/agy-console`，MIT，标签 `v0.1.0-preview.8`，标记预览版。

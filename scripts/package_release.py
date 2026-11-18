@@ -36,16 +36,26 @@ def build_skill(out):
     rows = list(source_files())
     names = {'VERSION', 'LICENSE', 'docs/CODEX-SKILL.md', 'scripts/install_codex_skill.py',
              'windows/install_codex_skill.py'}
-    files = {n:p.read_bytes() for n,p in rows if n in names or n.startswith('skills/agy-console/')
-             or n.startswith('windows/skills/agy-console/')}
+    external = ('SKILL.md', 'LICENSE', 'install.py', 'agents/openai.yaml',
+                'references/antigravity.md', 'references/collaboration-controls.md',
+                'scripts/collaboration_policy.py', 'scripts/console_start.py')
+    external_files = {prefix + name for prefix in
+                      ('skills/external-ai-team/', 'windows/skills/external-ai-team/')
+                      for name in external}
+    files = {n:p.read_bytes() for n,p in rows if n in names or n in external_files
+             or n.startswith('skills/agy-console/') or n.startswith('windows/skills/agy-console/')}
     required = names | {'skills/agy-console/SKILL.md', 'skills/agy-console/scripts/dispatch.py',
-                        'windows/skills/agy-console/SKILL.md', 'windows/skills/agy-console/scripts/dispatch.py'}
+                        'windows/skills/agy-console/SKILL.md', 'windows/skills/agy-console/scripts/dispatch.py'} | external_files
     if set(files) != required: raise ValueError('Companion skill package is incomplete')
     files['README.md'] = ('# Agy Console companion skill\n\n'
         'For an existing console, run `python3 scripts/install_codex_skill.py '
         '--console-root /path/to/AgyConsole --enable-default`.\n\n'
         'Windows: run `windows/install_codex_skill.py` with the existing console\'s bundled '
         'runtime/python.exe and pass `--console-root` explicitly.\n\n'
+        'The matching external-ai-team preview.3 is included in full (8 files per platform). '
+        'Install it separately with `python3 skills/external-ai-team/install.py '
+        '--codex-home /path/to/codex-home`; Windows uses its existing bundled Python '
+        'and `windows/skills/external-ai-team/install.py`. Existing destinations are never overwritten.\n\n'
         'See [installation and removal](docs/CODEX-SKILL.md). This archive contains no '
         'console runtime, credentials or machine-specific connection.\n').encode('utf-8')
     files['PACKAGE-MANIFEST.json'] = json.dumps({'schema':1,'version':VERSION,'kind':'codex-skill',
@@ -55,7 +65,7 @@ def build_skill(out):
     return path
 
 
-def build(out, vendor_archive, expected_vendor_digest, windows_only=False, include_program_updates=True):
+def build(out, vendor_archive, expected_vendor_digest, windows_only=False, include_program_updates=False):
     if audit()['status'] != 'passed': raise ValueError('Source audit failed')
     if sha256(vendor_archive.read_bytes()) != expected_vendor_digest:
         raise ValueError('Windows handoff runtime carrier digest mismatch')
@@ -119,8 +129,9 @@ if __name__ == '__main__':
     p.add_argument('--carrier-sha256',required=True)
     p.add_argument('--report',type=Path,required=True)
     p.add_argument('--windows-only',action='store_true',help='Publish only Windows; leave Mac/Linux releases unchanged')
+    p.add_argument('--program-updates-after-full-upgrade', action='store_true', help='Only for clients already upgraded with the complete new bootstrap; never for preview.8')
     a=p.parse_args()
-    result=build(a.out,a.windows_runtime_carrier,a.carrier_sha256,a.windows_only)
+    result=build(a.out,a.windows_runtime_carrier,a.carrier_sha256,a.windows_only,a.program_updates_after_full_upgrade)
     a.report.parent.mkdir(parents=True,exist_ok=True)
     a.report.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     print(json.dumps({'version':VERSION,'assets':len(result['assets']),'source_config':result['source_config'],'published':False}))
