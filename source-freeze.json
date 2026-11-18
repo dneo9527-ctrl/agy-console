@@ -1,6 +1,6 @@
 {
   ".gitattributes": "705fd4d6451a31d36b3df7de96f83f30ac976c9b4a6d1e51671d8e2f33e2d0da",
-  ".github/workflows/checks.yml": "7898b695555e0b9e9b64a83ab41550281c15cd10cc6781d80c5f8029fe0b7190",
+  ".github/workflows/checks.yml": "b1bfd2a797fd0342a2d743f0ec9758f2cf9b05e8d8fffaa6a5c2f805e4dbfff7",
   ".github/workflows/package.yml": "0ad09848aa6436fba95ea1df0caf3e01efafcb9deee2da84e19dc6d3dfbd8ccc",
   ".gitignore": "a847cb7a83fb2c88f78e3c213cfffa931af620dde111d83eeba3053f8953f163",
   "CHANGELOG.md": "7afc08838787a8706bee448d66659f872e65a11b85d26c582bc0e8e4ee6683bf",
@@ -80,7 +80,7 @@
   "test_bark_notifications.py": "48515f0d802b826d0c0402638d781e8f800434481fb304e31b48387e82f2296c",
   "test_candidate_priority.js": "dd42db3e2f46976f70703eed019061fc2cb35a31dd687e253a1dec1908e97475",
   "test_chat_scroll.js": "55881ed417afab98ff4c01519892a9c72145dd02d56d37711bfab08bb5e76a39",
-  "test_codex_bridge.py": "d5c093b88fd183e381468c5ab1069afeaf999253ed4b2992cbbbcd5284510302",
+  "test_codex_bridge.py": "8cdb9664e65961e6494a632f39a47a0b48a9cf9ba2c0cd36fbca5bc6d11891a0",
   "test_codex_skill.py": "ce3ee3e48b7e68efcca620a2569ecfd9af9135ed9e687d8c018228c3913e331e",
   "test_collaboration.py": "90f29c6926ebfd3f939ca118befcd47640b941455e91adeda47a4da5aace5249",
   "test_collaboration_ui.js": "5658241955000d0d4e1f9f941a64e067b4d1a2199e54c1c31cb9f59a5a7c1c60",
@@ -113,7 +113,7 @@
   "test_model_quota.py": "5025252325499f1d4f7a6dea5aa3e7f36a4f7b4f383783768a970ac412c6be2a",
   "test_model_resolution_cache.js": "bd037276071e9ff33034288a6b9e12742dac86e7a9076931a58503b734499901",
   "test_multi_ai_bridge.py": "79c385ad9843ef0e2a6ebe1f49480dfb35d03a3e521e3b2fa24a8c4391dd0d5d",
-  "test_multi_ai_collaboration.py": "74e09c2c3a16dec2d7c602d40f50acdff4bdf42ac8549baed08752b43aa1c82f",
+  "test_multi_ai_collaboration.py": "378a0fbf1eba1b27cf1f0a7b3fda8761d7689ea14352514526129335ccb83395",
   "test_panel_actions.js": "bbf6102b8e427069d9e6f737b831bc790b2da6a7d871318b27d2902a064cc347",
   "test_panel_actions.py": "8075e58a9ba88b459b130d6a066cebabfd788ed26bc475e12e02307191a57e28",
   "test_panel_backups.py": "e6a24f953f4a2408e88042b5c92ece49ab451ba774b68fcdae7207cfd9262219",
@@ -152,7 +152,7 @@
   "windows/Self-Test.cmd": "f0b73dbb41777623a5705a227828720799067798dd7759d5b59cc5d095293101",
   "windows/Start-Agy.cmd": "0d9556d5473a7f9e99efc5229d01fad6a95698bc117dd29da522a4a370d64e5a",
   "windows/THIRD-PARTY.json": "ffa2458a0357f6f3808fdfa1c85f91c8c8351d0018df1a822c9ac49a8883fd51",
-  "windows/Windows-Codex-\u63d0\u793a\u8bcd.txt": "fb8312c9e2ca47aa5e3d08511b113b4fe99d2534c160224af740968be3abc1aa",
+  "windows/Windows-Codex-提示词.txt": "fb8312c9e2ca47aa5e3d08511b113b4fe99d2534c160224af740968be3abc1aa",
   "windows/app/CHANGELOG.md": "7afc08838787a8706bee448d66659f872e65a11b85d26c582bc0e8e4ee6683bf",
   "windows/app/UPDATE-PROTOCOL.md": "fe66fb33d6933f14826877c401eab5a2ee4f217f9ebdeeff65e42d9c5f004de2",
   "windows/app/VERSION": "2b8ab020723b927481f0f83e06c5d043c9488f9651ca3370565e251132e5ad07",
@@ -189,7 +189,7 @@
   "windows/installation.py": "27180b25d294b141117bf398a3517a9b89d1b5bfca937842f1fcd876fe4571df",
   "windows/installer/AgyConsole.iss": "d922fca4449b4c59ca4fe78177ed6fc1d89e930836fbb8c4694194f2d5fea315",
   "windows/installer/installed-mode.json": "643667d71c6f75a13e2da1022f5e857205b6c56ee2678c9698480bd7628811c7",
-  "windows/installer/test_installer.py": "8b68fc8de4a6a2ec70acde5d136e2722641f7ea1908f6af85ec6e03ad4303cc9",
+  "windows/installer/test_installer.py": "c0a2faea49e373d9aaf0f6b1ce3bcdf77c02d583f17912463aa3b814cfb397c7",
   "windows/launcher.py": "bea95efb4f78cae3e51d584445d1f01e9483b2b1516f2e117e80c55ce3edb8c5",
   "windows/requirements.txt": "276b2ac56a8d86f0d00f89b6a8e99756a4b6af31fb6860e9f1a8605676b141f2",
   "windows/self_test.py": "05a3d3cfd5d8c2e401e361e9851236811545ad34f4146df49ef7ccd98cc75155",
@@ -204,5 +204,5 @@
   "windows/skills/external-ai-team/scripts/collaboration_policy.py": "49d6fb606467bd9a2c21dfa50e6940ddfde0ec6c277b11f79e5c6bd041065505",
   "windows/skills/external-ai-team/scripts/console_start.py": "e8db88a87cc5ecaf9d85de86e3c517991b3e3024bdbd4853b4ff18d2265a39c7",
   "windows/update_bootstrap.py": "189f38e62a7b737d064358f20efef3db7cdc4b1bbae36ed5c3f528e53001e7a2",
-  "\u542f\u52a8\u63a7\u5236\u53f0.command": "6c43041d215cd3f1450ff1d52b318ed79dbd4b2e6b6c28b86ab9535ff9a59303"
+  "启动控制台.command": "6c43041d215cd3f1450ff1d52b318ed79dbd4b2e6b6c28b86ab9535ff9a59303"
 }

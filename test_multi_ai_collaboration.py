@@ -1,6 +1,7 @@
 """Per-chat multi-provider policy, no browser, sign-in or real model calls."""
 import copy
 import json
+import sys
 import threading
 import unittest
 from unittest.mock import patch
@@ -168,7 +169,8 @@ class MultiAIStateTests(unittest.TestCase):
                 self.assertEqual(saved, before)
                 self.assertFalse(json.loads(self.app.coordination.path.read_text())['ready'])
                 self.app.save()
-        file = self.root/'Launcher.command'; file.write_text('#!/bin/sh\nexit 99\n')
+        launcher = 'Launcher.command' if sys.platform == 'darwin' else 'Launcher.cmd' if sys.platform == 'win32' else 'Start-Agy.sh'
+        file = self.root/launcher; file.write_text('#!/bin/sh\nexit 99\n')
         with patch.object(self.app.coordination, 'publish', side_effect=OSError('mirror disk full')):
             with self.assertRaises(OSError): self.app.set_console_startup({'launcher_path':str(file)})
         self.assertEqual(self.app.console_startup_info()['launcher']['path'], '')
@@ -214,7 +216,8 @@ class MultiAIStateTests(unittest.TestCase):
         conv = self.bind(); other = self.bind(fixtures.OTHER)
         self.assertFalse(conv['auto_start_console'])
         self.assertEqual(conv['console_startup']['launcher']['path'], '')
-        file = self.root/'Launcher.command'; file.write_text('#!/bin/sh\nexit 99\n')
+        launcher = 'Launcher.command' if sys.platform == 'darwin' else 'Launcher.cmd' if sys.platform == 'win32' else 'Start-Agy.sh'
+        file = self.root/launcher; file.write_text('#!/bin/sh\nexit 99\n')
         with patch('subprocess.Popen', side_effect=AssertionError('must not execute')):
             saved = self.app.set_console_startup({'launcher_path': str(file)})
             self.app.set_auto_start_console(conv['id'], {'codex_thread_id':fixtures.THREAD,'auto_start_console':True})

@@ -25,10 +25,12 @@ def main():
     parser.add_argument('--setup', type=Path, required=True)
     parser.add_argument('--baseline-setup', type=Path)
     parser.add_argument('--baseline-sha256')
+    parser.add_argument('--baseline-version', default='0.1.0-preview.8')
     parser.add_argument('--report', type=Path, required=True)
     args = parser.parse_args()
     require(os.name == 'nt', 'Native Windows required; never count a skipped test as passed')
     setup = args.setup.resolve()
+    expected_version = json.loads((Path(__file__).resolve().parents[2] / 'release.json').read_text(encoding='utf-8'))['version']
     require(bool(args.baseline_setup) == bool(args.baseline_sha256), 'Baseline file and digest must be supplied together')
     if args.baseline_setup:
         require(hashlib.sha256(args.baseline_setup.read_bytes()).hexdigest() == args.baseline_sha256,
@@ -58,20 +60,20 @@ def main():
         prefix = [setup, '/VERYSILENT', '/SUPPRESSMSGBOXES', '/SP-', '/NORESTART', '/NOCLOSEAPPLICATIONS', '/NORESTARTAPPLICATIONS', '/DIR=' + str(installed)]
         if args.baseline_setup:
             proc = run([args.baseline_setup.resolve()] + prefix[1:] + ['/LOG=' + str(root / 'baseline-install.log')])
-            require(proc.returncode == 0, 'Public .7 baseline install failed')
-            require((installed / 'app/VERSION').read_text().strip() == '0.1.0-preview.7', 'Unexpected public baseline version')
+            require(proc.returncode == 0, 'Public baseline install failed')
+            require((installed / 'app/VERSION').read_text().strip() == args.baseline_version, 'Unexpected public baseline version')
             require(data_sentinel.read_bytes() == data_bytes, 'Baseline install changed external fixture data')
-            passed('public_7_baseline_installed', sha256=args.baseline_sha256)
+            passed('public_baseline_installed', version=args.baseline_version, sha256=args.baseline_sha256)
         proc = run(prefix + ['/LOG=' + str(root / 'install.log')])
         require(proc.returncode == 0, 'Install failed: ' + str(proc.returncode) + proc.stderr)
         python = installed / 'runtime/python.exe'
         require(python.is_file() and (installed / 'installed-mode.json').is_file(), 'Missing installed runtime/layout')
+        require((installed / 'app/VERSION').read_text().strip() == expected_version, 'Installed version differs from release candidate')
         passed('real_exe_install_path_with_spaces')
         if args.baseline_setup:
-            require((installed / 'app/VERSION').read_text().strip() == '0.1.0-preview.8', 'Public .7 to .8 upgrade version mismatch')
             require(data_sentinel.read_bytes() == data_bytes and official_marker.read_text() == 'not a credential',
                     'Public baseline upgrade changed external fixture data')
-            passed('public_7_to_8_installer_upgrade_preserves_data')
+            passed('public_baseline_to_candidate_upgrade_preserves_data', baseline_version=args.baseline_version, candidate_version=expected_version)
         for name in ('Start-Agy.cmd', 'Login-Agy.cmd', 'Install-Official-CLI.url', 'Open-Panel.url', 'Getting-Started.html', 'installation.py'):
             require((installed / name).is_file(), 'Missing first-use entry: ' + name)
         require('http://127.0.0.1:8765/' in (installed / 'Open-Panel.url').read_text(), 'Wrong panel shortcut URL')

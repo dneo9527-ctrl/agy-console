@@ -28,9 +28,17 @@ class BindingTests(unittest.TestCase):
         self.app.close(); self.temp.cleanup()
 
     def wait(self, turn):
-        deadline = time.monotonic()+5
-        while turn['status'] in BUSY and time.monotonic()<deadline:time.sleep(.02)
-        self.assertNotIn(turn['status'], BUSY)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            # Observe terminal state after the worker's locked persistence and
+            # guard handling, just as API readers do.
+            with self.app.lock:
+                if turn['status'] not in BUSY:
+                    return turn
+            time.sleep(.02)
+        with self.app.lock:
+            self.assertNotIn(turn['status'], BUSY)
+        return turn
 
     def test_repeated_binding_persists_and_different_threads_stay_separate(self):
         first = self.app.bind_codex(THREAD, '固定聊天')

@@ -71,9 +71,9 @@ jobs:
         shell: pwsh
         run: |
           $setup = (Get-ChildItem work/windows-release/*-setup.exe).FullName
-          $baseline = Join-Path $PWD 'work/baseline-7-setup.exe'
-          Invoke-WebRequest -Uri 'https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.7/AgyConsole-0.1.0-preview.7-windows-x64-setup.exe' -OutFile $baseline
-          python -u -B windows/installer/test_installer.py --setup "$setup" --baseline-setup "$baseline" --baseline-sha256 '18cb90f132974077549395179fb608a49c143b73e312764796896d1da18e7278' --report work/windows-installer-verification.json
+          $baseline = Join-Path $PWD 'work/baseline-8-setup.exe'
+          Invoke-WebRequest -Uri 'https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.8/AgyConsole-0.1.0-preview.8-windows-x64-setup.exe' -OutFile $baseline
+          python -u -B windows/installer/test_installer.py --setup "$setup" --baseline-setup "$baseline" --baseline-version '0.1.0-preview.8' --baseline-sha256 '75877212ada82bae876f0ed5a340f1e01909276db4d50648fe3ba39781592047' --report work/windows-installer-verification.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
