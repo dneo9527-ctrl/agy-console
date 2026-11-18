@@ -231,7 +231,7 @@ ConvertTo-Json -InputObject @($rows) -Compress'''
         require(proc.returncode == 0, 'Uninstall left its maintenance guard active: ' + proc.stderr)
         passed('uninstaller_releases_own_logs_and_maintenance_guard_before_cleanup')
     report.update(status='passed', installation_performed='Only disposable GitHub runner',
-                  baseline_upgrade='public .7 installer to current candidate' if args.baseline_setup else 'simulated previous marker only',
+                  baseline_upgrade='public ' + args.baseline_version + ' installer to ' + expected_version if args.baseline_setup else 'simulated previous marker only',
                   limitations=['No actual official CLI login or model call', 'No Windows SmartScreen/Defender/old OS acceptance claim'])
     args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print('Native installer lifecycle passed:', len(report['checks']), flush=True)

@@ -1,9 +1,11 @@
 # Bark 完成／失败提醒
 
+**接收端发行暂停。** Bark Build 51 仍保留为草稿，等待针对 Antigravity.app 本体的正确接入候选；目前没有公开可安装的匹配接收端。本版 Agy 及两套 Skill 可独立完整安装，下述 Console 通知适配仅保留为已隔离验证的可选接口，不能视为已开放的手机提醒功能，也不代表支持 Antigravity.app。
+
 Mac 上本版本包含与 Bark Bridge 2.6.2-preview.2 / Build 51 匹配的终态生产者；两端均需安装。控制台保存当前任务最终完成或最终失败后，将有限事件元数据交给本机 Bark。中间额度候补、取消和历史记录不回放。
 
 控制台只交接结果类别和短会话标识，不发送提示词、回复、原始错误、命令或账号。Bark 自己处理已保存手机、来源路由、总开关、静音、勿扰及内容预览；关闭内容预览时隐藏会话名。事件发送失败不会改变已保存的任务结果，无新增守护进程或轮询。
 
-安装匹配的 [Bark 预览版](https://github.com/dneo9527-ctrl/bark-bridge-macos/releases/tag/v2.6.2-preview.2)，在 Bark“来源”管理 Agy Console。保持官方 CLI 正常使用；不会为提醒重复调用模型。Windows/Linux 不调用这个 Mac 本地接收端。
+匹配接收端通过验收并在 [Bark 发行页](https://github.com/dneo9527-ctrl/bark-bridge-macos/releases) 公开前，不提供通知安装入口。未来需在 Bark“来源”管理对应适配。保持官方 CLI 正常使用；不会为提醒重复调用模型。Windows/Linux 不调用这个 Mac 本地接收端。
 
 生产者和接收端有合成测试，本机一次明确的接入测试获得网关 HTTP 200。手机实收及真实新模型任务触发尚未确认；等待授权／回答事件、独立 Agy CLI 和 Antigravity IDE 不覆盖。不要把网页或 CLI 的任意问句解释为等待状态。
