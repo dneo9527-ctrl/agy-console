@@ -52,7 +52,7 @@ def build_skill(out):
         '--console-root /path/to/AgyConsole --enable-default`.\n\n'
         'Windows: run `windows/install_codex_skill.py` with the existing console\'s bundled '
         'runtime/python.exe and pass `--console-root` explicitly.\n\n'
-        'The matching external-ai-team preview.4 is included in full (9 files per platform). '
+        'The matching external-ai-team preview.5 is included in full (9 files per platform). '
         'Install it separately with `python3 skills/external-ai-team/install.py '
         '--codex-home /path/to/codex-home`; Windows uses its existing bundled Python '
         'and `windows/skills/external-ai-team/install.py`. Existing destinations are never overwritten.\n\n'

@@ -1,17 +1,18 @@
 {
-  "version": "0.1.0-preview.15",
+  "version": "0.1.0-preview.16",
   "stage": "publisher_candidate",
-  "source_scope": "197-file developer freeze plus retained public fixes and matching nine-file Skill",
+  "source_scope": "218-file developer handoff on public preview.15; retained native platform fixes",
   "developer_reported": {
-    "python_tests": 394,
-    "javascript_suites": 34,
+    "python_tests": 410,
+    "javascript_suites": 35,
     "mac_live_roundtable": "7/7; developer evidence only"
   },
-  "publication_validation": "See final exact-commit Actions, Release and PLATFORM-VERIFICATION.json for checks actually performed",
+  "publication_validation": "Final exact-commit Actions, Release and PLATFORM-VERIFICATION.json record performed checks",
   "not_verified": [
-    "Native Windows/Linux official login and live model calls",
-    "Automatic cross-window Skill adoption",
-    "Fresh hardware/old OS/signing/notarization",
-    "Real model event to phone notification"
+    "Host automatic visible activity panel",
+    "Native Windows/Linux login and model calls",
+    "System sleep/wake",
+    "Cross-window automatic Skill adoption",
+    "Fresh hardware/old OS/signing/notarization"
   ]
 }

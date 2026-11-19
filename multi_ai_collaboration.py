@@ -1,12 +1,13 @@
 """Strict per-chat collaboration preferences and a metadata-only offline mirror."""
 import copy
 import json
+import math
 import os
 from pathlib import Path
 import re
 import secrets
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 PROVIDERS = ('agy', 'muse', 'claude')
@@ -380,13 +381,26 @@ def _meeting_slots(meeting):
     return [{'provider': provider, 'stage': stage, 'status': 'pending', 'text': '',
              'source_url': '', 'detail': '', 'turn_id': None, 'created_at': None,
              'updated_at': None, 'queued_at': None, 'started_at': None, 'ended_at': None,
-             'queue_seconds': None, 'run_seconds': None, 'text_truncated': False}
+             'queue_seconds': None, 'run_seconds': None, 'text_truncated': False,
+             'model': None, 'usage': None, 'usage_scope': None, 'wait_started_at': None}
             for stage in ('proposal', 'review') for provider in meeting['participants']] + [
             {'provider': meeting['roundtable']['host'], 'stage': 'summary', 'status': 'pending',
              'text': '', 'source_url': '', 'detail': '', 'turn_id': None,
              'created_at': None, 'updated_at': None, 'queued_at': None,
              'started_at': None, 'ended_at': None, 'queue_seconds': None, 'run_seconds': None,
-             'text_truncated': False}]
+             'text_truncated': False, 'model': None, 'usage': None, 'usage_scope': None,
+             'wait_started_at': None}]
+
+
+def _meeting_usage(turn):
+    """Use official counters as reported; thinking may already be in output."""
+    raw = turn.get('usage')
+    if not isinstance(raw, dict):
+        return None
+    clean = {key: number for key, number in raw.items()
+             if key in ('input_tokens', 'output_tokens', 'thinking_tokens', 'cache_read_tokens', 'total_tokens')
+             and type(number) in (int, float) and math.isfinite(number) and 0 <= number <= 2**53 - 1}
+    return clean or None
 
 
 def _native_meeting_turn(conv, meeting, event):
@@ -424,6 +438,10 @@ def _meeting_native_slot(conv, meeting, event, slot):
                 turn_id=turn['id'], queued_at=turn.get('created_at'),
                 started_at=turn.get('started_at'), ended_at=turn.get('ended_at'),
                 updated_at=turn.get('ended_at') or turn.get('progress_updated_at') or event['created_at'])
+    model = turn.get('model')
+    slot.update(model=model if isinstance(model, str) and re.fullmatch(r'[A-Za-z0-9_.-]{1,100}', model) else None,
+                usage=_meeting_usage(turn),
+                usage_scope=turn.get('usage_scope') if turn.get('usage_scope') in ('turn', 'conversation') else None)
     if status == 'failed' and turn['status'] == 'completed':
         slot['detail'] = 'CLI 任务缺少可核实的非空最终回复。'
     elif truncated:
@@ -466,8 +484,12 @@ def _project_meeting(conv, meeting, check=True):
             if check and ((slot['status'] == 'waiting' and event['status'] in ('sending', 'unavailable'))
                           or slot['status'] == 'sending' and event['status'] in ('sending', 'unavailable')):
                 raise ValueError('已发送或发送不明的阶段不能退回未发送，不能自动重复派发。')
-            slot.update(status=event['status'], text=event['text'], source_url=event['source_url'],
+            slot.update(status=event['status'], text=event['text'], source_url=event['source_url'] or slot['source_url'],
                         detail=event['detail'], updated_at=event['created_at'])
+            if event['status'] in ('sending', 'waiting') and slot['wait_started_at'] is None:
+                slot['wait_started_at'] = event['created_at']
+            if event['status'] in MEETING_TERMINAL:
+                slot['ended_at'] = event['created_at']
     return slots
 
 
@@ -682,6 +704,13 @@ def meeting_view(conv, meeting):
     status = ('completed' if all(slot['status'] == 'completed' for slot in slots) else 'partial') if terminal(summary) else 'active'
     phase = ('finished' if terminal(summary) else 'proposal' if any(not terminal(slot) for slot in slots if slot['stage'] == 'proposal')
              else 'review' if any(not terminal(slot) for slot in slots if slot['stage'] == 'review') else 'summary')
+    measured = datetime.now(timezone.utc).isoformat()
+    for slot in slots:
+        wait_start = slot.get('wait_started_at')
+        wait_end = slot.get('ended_at') if terminal(slot) else measured
+        slot['wait_seconds'] = (max(0, round((_meeting_stamp(wait_end) - _meeting_stamp(wait_start)).total_seconds(), 2))
+                                if wait_start and wait_end else None)
+        slot['can_mark_unavailable'] = slot['status'] == 'pending' and _meeting_ready(slots, slot['stage'])
     speakers = [dict(provider=slot['provider'], stage=slot['stage'], role='host' if slot['provider'] == value['roundtable']['host'] else 'participant',
                      text=slot['text'], source_url=slot['source_url'], turn_id=slot['turn_id'],
                      text_truncated=slot['text_truncated'], detail=slot['detail'],
@@ -692,10 +721,26 @@ def meeting_view(conv, meeting):
     result = {key: value[key] for key in value if key != 'events'}
     latest = max([value['updated_at']] + [slot['updated_at'] for slot in slots if slot['updated_at']], key=_meeting_stamp)
     import hashlib
-    fingerprint = hashlib.sha256(json.dumps(slots, ensure_ascii=False, sort_keys=True).encode('utf-8')).hexdigest()[:20]
+    # Elapsed waiting is derived from the read time, not a transcript change.
+    # Keep snapshots stable so an idle wait does not replace the whole card.
+    revision_slots = [{key: item for key, item in slot.items() if key != 'wait_seconds'} for slot in slots]
+    fingerprint = hashlib.sha256(json.dumps(revision_slots, ensure_ascii=False, sort_keys=True).encode('utf-8')).hexdigest()[:20]
     result.update(host=value['roundtable']['host'], rounds=2, status=status, phase=phase,
                   updated_at=latest, slots=slots, speakers=speakers, completed_count=sum(slot['status'] == 'completed' for slot in slots),
                   total_count=len(slots), revision=str(len(value['events'])) + ':' + fingerprint)
+    native = [slot for slot in slots if slot['provider'] == 'agy' and slot['turn_id']]
+    known = [slot for slot in native if slot['usage_scope'] == 'turn' and slot['usage']]
+    aggregate = {}
+    for slot in known:
+        for key, count in slot['usage'].items():
+            aggregate[key] = aggregate.get(key, 0) + count
+    ended = summary['updated_at'] if terminal(summary) else None
+    result['metrics'] = {'started_at': value['created_at'], 'ended_at': ended, 'measured_at': measured,
+                         'wall_seconds': max(0, round((_meeting_stamp(ended or measured) - _meeting_stamp(value['created_at'])).total_seconds(), 2)),
+                         'usage': aggregate or None, 'usage_scope': 'official_cli_turns',
+                         'known_turn_count': len(known), 'unmeasured_turn_count': len(native) - len(known),
+                         'unknown_providers': [provider for provider in value['participants'] if provider != 'agy'],
+                         'usage_complete': bool(native) and len(known) == len(native) and all('total_tokens' in slot['usage'] for slot in known)}
     return result
 
 

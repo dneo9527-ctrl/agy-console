@@ -751,6 +751,61 @@ class Console:
                 self.persist_meetings(conv, [updated if m['id'] == mid else m for m in records], updated['updated_at'])
             return {'recorded': True, 'duplicate': duplicate, 'meeting': meeting_view(conv, updated), 'model_started': False}
 
+    def meeting_action(self, cid, mid, body):
+        """Explicit local housekeeping only; never dispatch, retry or stop a model."""
+        common = {'codex_thread_id', 'action', 'provider', 'stage'}
+        if not isinstance(body, dict) or not common <= set(body):
+            raise ValueError('会议操作字段无效。')
+        action = body.get('action')
+        extra = {'source_id', 'reason', 'acknowledge'} if action == 'mark_unavailable' else set()
+        if action not in ('mark_unavailable', 'inspect_result') or set(body) != common | extra:
+            raise ValueError('请选择受支持的会议操作及明确参数。')
+        if (not isinstance(body.get('provider'), str) or body['provider'] not in ('codex', 'agy', 'muse', 'claude')
+                or not isinstance(body.get('stage'), str) or body['stage'] not in ('proposal', 'review', 'summary')):
+            raise ValueError('会议操作提供方或阶段无效。')
+        with self.lock:
+            if self.stopping or self.maintenance:
+                raise ConflictError('服务正在重载或维护，未处理会议操作。')
+            conv = self.conversation(cid)
+            if not conv or not conv.get('codex_thread_id') or body['codex_thread_id'] != conv['codex_thread_id']:
+                raise ValueError('会议操作与当前固定聊天不一致。')
+            records = validate_meetings(conv)
+            record = next((item for item in records if item['id'] == mid), None)
+            if record is None:
+                raise ValueError('本聊天没有这场圆桌。')
+            view = meeting_view(conv, record)
+            slot = next((item for item in view['slots'] if item['provider'] == body['provider'] and item['stage'] == body['stage']), None)
+            if slot is None:
+                raise ValueError('操作不属于本会议冻结的参与方或主持阶段。')
+            if action == 'inspect_result':
+                native = bool(slot['turn_id'])
+                inspection = {'source_kind': 'native_cli' if native else 'not_sent' if slot['status'] in ('pending', 'unavailable') else 'codex_observed',
+                              'source_url': slot['source_url'], 'turn_id': slot['turn_id'], 'status': slot['status'],
+                              'detail': ('仅核对本地保存的原生 CLI 任务；未重跑或再次向服务器验证。' if native else
+                                         '这是 Codex 已同步的网页观察记录；请打开原会话核对实际发送与回复，未重发。' if slot['provider'] in ('muse', 'claude') and slot['status'] not in ('pending', 'unavailable') else
+                                         '此阶段尚无已发送任务，未调用模型。' if slot['status'] in ('pending', 'unavailable') else '仅核对当前 Codex 已记录的发言，未调用模型。')}
+                return copy.deepcopy({'meeting': view, 'slot': slot, 'inspection': inspection, 'model_started': False})
+            if (body.get('acknowledge') is not True or not isinstance(body.get('reason'), str)
+                    or not body['reason'].strip() or len(body['reason']) > 1000 or '\x00' in body['reason']):
+                raise ValueError('请填写缺席理由，并明确确认此阶段从未发送。')
+            event = {'codex_thread_id': body['codex_thread_id'], 'source_id': body['source_id'],
+                     'provider': body['provider'], 'stage': body['stage'], 'status': 'unavailable',
+                     'text': '', 'source_url': '', 'detail': body['reason'].strip()}
+            existing = next((item for item in record['events'] if item['source_id'] == body['source_id']), None)
+            if existing:
+                if any(existing[key] != value for key, value in event.items() if key != 'codex_thread_id'):
+                    raise ConflictError('该操作标识已用于其他记录，原记录保留。')
+            elif slot['status'] != 'pending' or slot['turn_id']:
+                raise ConflictError('此阶段已经发送、关联任务或结束；请核对原始结果，不能标为未发送缺席。')
+            elif not slot['can_mark_unavailable']:
+                raise ConflictError('请先核对并结束前一阶段；不能跳过前轮直接收尾。')
+            updated, duplicate = record_meeting_event(conv, mid, event, now())
+            if not duplicate:
+                self.persist_meetings(conv, [updated if item['id'] == mid else item for item in records], updated['updated_at'])
+            result = meeting_view(conv, updated)
+            return {'recorded': True, 'duplicate': duplicate, 'meeting': result,
+                    'summary_ready': result['phase'] == 'summary', 'model_started': False}
+
     def console_startup_info(self):
         return self.coordination.metadata()
 
@@ -1353,7 +1408,7 @@ class Console:
                     'features': {'quota': True, 'codex_binding': True, 'light_history': True, 'resources': True, 'resource_summary': True, 'context_insights': True, 'window_models': True,
                                  'task_recovery': True, 'context_compaction': True, 'history_search': True, 'panel_backups': True, 'account_switch': True, 'panel_auto_open': True,
                                  'session_groups': True, 'conversation_versions': True, 'proxy_environment': True,
-                                  'gpt_collaboration': True, 'multi_ai_collaboration': True, 'console_startup': True, 'roundtable_host': True, 'roundtable_messages': True, 'roundtable_meetings': True, 'current_turn_results': True, 'global_model': True,
+                                  'gpt_collaboration': True, 'multi_ai_collaboration': True, 'console_startup': True, 'roundtable_host': True, 'roundtable_messages': True, 'roundtable_meetings': True, 'roundtable_meeting_actions': True, 'roundtable_actions': True, 'current_turn_results': True, 'global_model': True,
                                   'collaboration_history': True, 'verified_api_recovery': True,
                                   'quota_failover': True, 'model_resolution': True, 'configuration_transfer': True, 'software_updates': True, 'collaboration_results': True, 'queue_priority': True, 'foreground_reload': bool(self.reload_callback)},
                     'console_startup': self.console_startup_info(),
@@ -2388,6 +2443,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/meetings/([a-f0-9]{32})/events', path)
         if match:
             return 200, app.record_meeting_event(match[1], match[2], body)
+        match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/meetings/([a-f0-9]{32})/actions', path)
+        if match:
+            return 200, app.meeting_action(match[1], match[2], body)
         match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/roundtable/messages', path)
         if match:
             return 200, app.record_roundtable_message(match[1], body)

@@ -1,30 +1,19 @@
 {
-  "version": "0.1.0-preview.15",
-  "baseline_commit": "69e00ab18bf6c55ab096c5f9c52a4edac091cae4",
+  "version": "0.1.0-preview.16",
   "status": "publisher_integrated_candidate",
-  "source_scope": "Closed explicit source export; no data, private home Skills or credentials",
-  "merge_choices": [
-    "Preserve public numeric-loopback bind",
-    "Retain Windows platform adaptations by reviewed three-way merge",
-    "Retain public launcher/installer/license/companion baseline",
-    "Require full initial upgrade from preview.8",
-    "Merge reviewed preview.14 identity assets and preview.15 independent meetings",
-    "Retain public startup/update bootstrap instead of local launcher modifications"
-  ],
-  "automatic_cross_web_roundtable": false,
-  "distribution_candidate_base": "0.1.0-preview.13",
-  "companion_skill_integration": "external-ai-team 0.1.0-preview.4; nine complete public files per platform",
-  "publication_requires": "Exact-commit CI, native installer checks and verified draft/public downloads",
-  "public_baseline_commit": "8ff66ab64f5aaa342f1296ff5214304759908c9d",
+  "public_baseline_commit": "156e01e79dcd3a8f056a5c618be8485e1d01c435",
+  "original_handoff_sha256": "25f45dba0241177e86b7c6575ec57911e6ef75971e656eb1f26150dca51ab332",
+  "source_files": 218,
+  "developer_delta_paths": 23,
+  "publisher_runtime_changes": false,
   "publisher_pairing": {
-    "external_ai_team_version": "0.1.0-preview.4",
+    "external_ai_team_version": "0.1.0-preview.5",
     "external_skill_files": 9,
     "platform_copies": [
       "POSIX",
       "Windows"
     ],
-    "private_local_adapter": false,
-    "original197file_handoff_sha256": "a80d33c0af7de9aa633940a014c1f02cec2964fb18b5f79a63fbf62ebd10a125",
-    "external_ai_team_commit": "51ae028c99d27a2cd10ab86a6e2e104f6b6332d1"
-  }
+    "private_local_adapter": false
+  },
+  "publication_requires": "Exact-commit CI, complete installers, paired Skill installs and verified draft/public downloads"
 }

@@ -67,7 +67,7 @@ jobs:
         run: >-
           python -B -c "import sys, unittest;
           sys.path.insert(0, 'windows/app');
-          suite = unittest.defaultTestLoader.loadTestsFromNames(['test_roundtable_meetings', 'test_roundtable_meeting_bridge', 'test_roundtable_meeting_http', 'test_meeting_integration']);
+          suite = unittest.defaultTestLoader.loadTestsFromNames(['test_roundtable_meetings', 'test_roundtable_meeting_bridge', 'test_roundtable_meeting_http', 'test_meeting_integration', 'test_roundtable_metrics_actions']);
           result = unittest.TextTestRunner(verbosity=2).run(suite);
           sys.exit(not result.wasSuccessful())"
       - name: Build real per-user installer with bundled runtime

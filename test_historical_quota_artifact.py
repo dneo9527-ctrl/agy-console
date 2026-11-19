@@ -244,14 +244,20 @@ class HistoricalQuotaArtifactTests(unittest.TestCase):
             conv = app.create()
             turn = app.submit(conv['id'], 'work', '')
             deadline = time.monotonic() + 5
-            while turn['status'] in BUSY and time.monotonic() < deadline:
+            while time.monotonic() < deadline:
+                # Like API readers, observe terminal state only after the worker
+                # releases its lock with attempts and persistence finalized.
+                with app.lock:
+                    if turn['status'] not in BUSY:
+                        break
                 time.sleep(.01)
-            self.assertEqual(turn['status'], 'completed', turn.get('error'))
-            self.assertTrue(turn['fallback_enabled'])
-            self.assertEqual(len(turn['attempts']), 1)
-            self.assertEqual(turn.get('model_changes', []), [])
-            self.assertEqual(app.blocked_models(), [])
-            self.assertEqual(turn['completion_evidence']['artifacts'][0]['artifact'], 'plan.md')
+            with app.lock:
+                self.assertEqual(turn['status'], 'completed', turn.get('error'))
+                self.assertTrue(turn['fallback_enabled'])
+                self.assertEqual(len(turn['attempts']), 1)
+                self.assertEqual(turn.get('model_changes', []), [])
+                self.assertEqual(app.blocked_models(), [])
+                self.assertEqual(turn['completion_evidence']['artifacts'][0]['artifact'], 'plan.md')
         finally:
             app.close()
 
