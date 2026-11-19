@@ -37,7 +37,7 @@ def build_skill(out):
     names = {'VERSION', 'LICENSE', 'docs/CODEX-SKILL.md', 'scripts/install_codex_skill.py',
              'windows/install_codex_skill.py'}
     external = ('SKILL.md', 'LICENSE', 'install.py', 'agents/openai.yaml',
-                'references/antigravity.md', 'references/collaboration-controls.md',
+                'references/antigravity.md', 'references/collaboration-controls.md', 'references/roundtable.md',
                 'scripts/collaboration_policy.py', 'scripts/console_start.py')
     external_files = {prefix + name for prefix in
                       ('skills/external-ai-team/', 'windows/skills/external-ai-team/')
@@ -52,7 +52,7 @@ def build_skill(out):
         '--console-root /path/to/AgyConsole --enable-default`.\n\n'
         'Windows: run `windows/install_codex_skill.py` with the existing console\'s bundled '
         'runtime/python.exe and pass `--console-root` explicitly.\n\n'
-        'The matching external-ai-team preview.3 is included in full (8 files per platform). '
+        'The matching external-ai-team preview.4 is included in full (9 files per platform). '
         'Install it separately with `python3 skills/external-ai-team/install.py '
         '--codex-home /path/to/codex-home`; Windows uses its existing bundled Python '
         'and `windows/skills/external-ai-team/install.py`. Existing destinations are never overwritten.\n\n'

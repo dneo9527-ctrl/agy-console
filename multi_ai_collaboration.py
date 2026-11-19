@@ -296,6 +296,414 @@ def validate_roundtable_messages(conv):
         raise ValueError('本聊天圆桌发言记录已达大小限制，请保留现有记录。')
     return copy.deepcopy(messages)
 
+
+# Independent meetings have their own identity and bounded event log. Native
+# Agy results are referenced, not copied or inferred from arbitrary client text.
+MEETING_LIMIT = 100
+MEETING_BYTES = 2 * 1024 * 1024
+MEETING_EVENT_LIMIT = 64
+MEETING_STAGES = ('proposal', 'review', 'summary')
+MEETING_TERMINAL = frozenset(('completed', 'failed', 'unavailable', 'cancelled'))
+MEETING_OBSERVED = frozenset(('sending', 'waiting')) | MEETING_TERMINAL
+MEETING_FIELDS = frozenset(('schema_version', 'id', 'source_id', 'codex_thread_id',
+                           'topic', 'branch', 'roundtable', 'participants',
+                           'created_at', 'updated_at', 'events'))
+MEETING_EVENT_FIELDS = frozenset(('source_id', 'provider', 'stage', 'status', 'text',
+                                 'source_url', 'detail', 'turn_id', 'created_at'))
+
+
+def _meeting_stamp(value):
+    try:
+        stamp = datetime.fromisoformat(value) if isinstance(value, str) and len(value) <= 100 else None
+    except ValueError:
+        stamp = None
+    if stamp is None or stamp.tzinfo is None:
+        raise ValueError('会议记录时间无效。')
+    return stamp
+
+
+def _meeting_id(value):
+    return isinstance(value, str) and re.fullmatch(r'[a-f0-9]{32}', value) is not None
+
+
+def _meeting_source(value):
+    return isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}', value) is not None
+
+
+def _meeting_text(value, maximum, label, required=False):
+    if (not isinstance(value, str) or len(value) > maximum or '\x00' in value
+            or len(value.encode('utf-8')) > maximum * 4 or required and not value.strip()):
+        raise ValueError(label + '无效。')
+    return value.strip()
+
+
+def _meeting_url(provider, url, required=False):
+    if not isinstance(url, str) or len(url) > 500 or url != url.strip():
+        raise ValueError('会议来源地址无效。')
+    if provider in ('codex', 'agy'):
+        if url:
+            raise ValueError('本地或 CLI 发言不应带外部会话地址。')
+        return ''
+    if not url and not required:
+        return ''
+    try:
+        parsed = urlsplit(url)
+        hosts = {'muse': ('muse.ai', 'www.muse.ai'), 'claude': ('claude.ai', 'www.claude.ai')}
+        prefix = '/thread/' if provider == 'muse' else '/chat/'
+        valid = (provider in hosts and parsed.scheme == 'https' and parsed.hostname in hosts[provider]
+                 and not parsed.username and not parsed.password and parsed.port is None
+                 and not parsed.query and not parsed.fragment and '?' not in url and '#' not in url
+                 and parsed.path.startswith(prefix) and UUID.fullmatch(parsed.path[len(prefix):]))
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ValueError('请使用该提供方具体的 HTTPS 会话地址，不含查询参数或凭据。')
+    return url
+
+
+def _meeting_identity(conv, thread):
+    current = conv.get('codex_thread_id')
+    if not isinstance(current, str) or not UUID.fullmatch(current) or thread != current:
+        raise ValueError('会议与当前固定聊天不一致。')
+    return current
+
+
+def _meeting_allowed(conv, provider=None):
+    if provider is not None and (not isinstance(provider, str) or provider not in HOSTS):
+        raise ValueError('会议提供方无效。')
+    policy = canonical(conv)
+    if not policy['enabled'] or provider not in (None, 'codex') and not policy['providers'].get(provider, {}).get('enabled'):
+        raise ValueError('当前聊天已暂停该会议提供方，未记录新的操作。')
+
+
+def _meeting_slots(meeting):
+    return [{'provider': provider, 'stage': stage, 'status': 'pending', 'text': '',
+             'source_url': '', 'detail': '', 'turn_id': None, 'created_at': None,
+             'updated_at': None, 'queued_at': None, 'started_at': None, 'ended_at': None,
+             'queue_seconds': None, 'run_seconds': None, 'text_truncated': False}
+            for stage in ('proposal', 'review') for provider in meeting['participants']] + [
+            {'provider': meeting['roundtable']['host'], 'stage': 'summary', 'status': 'pending',
+             'text': '', 'source_url': '', 'detail': '', 'turn_id': None,
+             'created_at': None, 'updated_at': None, 'queued_at': None,
+             'started_at': None, 'ended_at': None, 'queue_seconds': None, 'run_seconds': None,
+             'text_truncated': False}]
+
+
+def _native_meeting_turn(conv, meeting, event):
+    matches = [turn for turn in conv.get('turns', []) if isinstance(turn, dict)
+               and turn.get('id') == event['turn_id']]
+    turn = matches[0] if len(matches) == 1 else None
+    if (not turn or turn.get('source') != 'codex' or turn.get('kind', 'text') != 'text'
+            or turn.get('meeting_id') != meeting['id'] or turn.get('meeting_stage') != event['stage']
+            or turn.get('branch') != meeting['branch'] or turn.get('roundtable') != meeting['roundtable']
+            or turn.get('roundtable_role') != ('host' if meeting['roundtable']['host'] == 'agy' else 'participant')):
+        raise ValueError('会议关联的 CLI 任务不属于本会议、工作会话或冻结角色。')
+    if (not isinstance(turn.get('status'), str)
+            or turn['status'] not in ('queued', 'running', 'cancelling', 'completed', 'failed', 'cancelled', 'interrupted')):
+        raise ValueError('会议关联 CLI 任务状态无效。')
+    _meeting_stamp(turn.get('created_at'))
+    for key in ('started_at', 'ended_at', 'progress_updated_at'):
+        if turn.get(key) is not None:
+            _meeting_stamp(turn[key])
+    return turn
+
+
+def _meeting_native_slot(conv, meeting, event, slot):
+    turn = _native_meeting_turn(conv, meeting, event)
+    status = turn['status']
+    if status == 'completed' and (not isinstance(turn.get('response'), str) or not turn['response'].strip()
+                                  or not isinstance(turn.get('agy_id'), str) or not UUID.fullmatch(turn['agy_id'])
+                                  or turn.get('session_mismatch')
+                                  or turn.get('expected_agy_id') is not None and turn.get('agy_id') != turn['expected_agy_id']):
+        # A malformed completed result is visible as failure, never agreement.
+        status = 'failed'
+    text = turn.get('response', '') if status == 'completed' else ''
+    truncated = len(text) > 12000
+    slot.update(status=status, text=text[:12000], text_truncated=truncated,
+                detail=turn.get('error', '')[:1000] if isinstance(turn.get('error', ''), str) else '',
+                turn_id=turn['id'], queued_at=turn.get('created_at'),
+                started_at=turn.get('started_at'), ended_at=turn.get('ended_at'),
+                updated_at=turn.get('ended_at') or turn.get('progress_updated_at') or event['created_at'])
+    if status == 'failed' and turn['status'] == 'completed':
+        slot['detail'] = 'CLI 任务缺少可核实的非空最终回复。'
+    elif truncated:
+        slot['detail'] = (slot['detail'] + '\n' if slot['detail'] else '') + '会议内仅显示前 12000 字符；完整原文保留在关联 CLI 任务。'
+    for target, first, last in (('queue_seconds', 'created_at', 'started_at'),
+                                ('run_seconds', 'started_at', 'ended_at')):
+        try:
+            if turn.get(first) and turn.get(last):
+                slot[target] = max(0, round((_meeting_stamp(turn[last]) - _meeting_stamp(turn[first])).total_seconds(), 2))
+        except ValueError:
+            slot[target] = None
+    return slot
+
+
+def _meeting_ready(slots, stage):
+    dependencies = () if stage == 'proposal' else ('proposal',) if stage == 'review' else ('proposal', 'review')
+    return all(slot['status'] in MEETING_TERMINAL or slot['status'] == 'interrupted'
+               for slot in slots if slot['stage'] in dependencies)
+
+
+def _project_meeting(conv, meeting, check=True):
+    slots = _meeting_slots(meeting)
+    for event in meeting['events']:
+        slot = next((slot for slot in slots if slot['provider'] == event['provider'] and slot['stage'] == event['stage']), None)
+        if slot is None:
+            raise ValueError('会议发言不属于冻结参与方或阶段。')
+        if check and (slot['status'] in MEETING_TERMINAL or slot['status'] in ('interrupted', 'linked')):
+            raise ValueError('已终结的会议阶段不能被覆盖。')
+        if check and not _meeting_ready(slots, event['stage']):
+            raise ValueError('前一轮尚未结束，不能提前进入下一阶段。')
+        if slot['created_at'] is None:
+            slot['created_at'] = event['created_at']
+        if event['status'] == 'linked':
+            if slot['status'] != 'pending':
+                raise ValueError('同一会议阶段已有派发记录，不能重复调用。')
+            _meeting_native_slot(conv, meeting, event, slot)
+        else:
+            if check and slot['turn_id'] is not None:
+                raise ValueError('CLI 阶段只读取实际任务结果，不能被客户端覆盖。')
+            if check and ((slot['status'] == 'waiting' and event['status'] in ('sending', 'unavailable'))
+                          or slot['status'] == 'sending' and event['status'] in ('sending', 'unavailable')):
+                raise ValueError('已发送或发送不明的阶段不能退回未发送，不能自动重复派发。')
+            slot.update(status=event['status'], text=event['text'], source_url=event['source_url'],
+                        detail=event['detail'], updated_at=event['created_at'])
+    return slots
+
+
+def _validate_meeting(conv, value):
+    if (not isinstance(value, dict) or set(value) != MEETING_FIELDS
+            or type(value.get('schema_version')) is not int or value['schema_version'] != 1
+            or not _meeting_id(value.get('id')) or not _meeting_source(value.get('source_id'))):
+        raise ValueError('独立会议记录结构或标识无效。')
+    thread = _meeting_identity(conv, value.get('codex_thread_id'))
+    settings = validate_roundtable(value.get('roundtable'), thread)
+    people = value.get('participants')
+    if (settings['mode'] != 'roundtable' or not isinstance(people, list) or len(people) < 2
+            or len(people) > len(HOSTS) or people[0] != 'codex'
+            or any(not isinstance(person, str) or person not in HOSTS for person in people)
+            or len(set(people)) != len(people) or settings['host'] not in people
+            or people != [p for p in HOSTS if p in people]):
+        raise ValueError('会议参与方或主持快照无效。')
+    _meeting_text(value.get('topic'), 1000, '会议议题', required=True)
+    if (not isinstance(value.get('branch'), str) or value['branch'] not in conv.get('branches', {})
+            or not re.fullmatch(r'[a-z][a-z0-9_-]{0,39}', value['branch'])):
+        raise ValueError('会议工作会话无效。')
+    created = _meeting_stamp(value.get('created_at'))
+    updated = _meeting_stamp(value.get('updated_at'))
+    if updated < created:
+        raise ValueError('会议更新时间无效。')
+    events = value.get('events')
+    if not isinstance(events, list) or len(events) > MEETING_EVENT_LIMIT:
+        raise ValueError('会议阶段记录过多。')
+    seen, last = set(), created
+    for event in events:
+        if not isinstance(event, dict) or set(event) != MEETING_EVENT_FIELDS:
+            raise ValueError('会议阶段记录结构无效。')
+        stamp = _meeting_stamp(event.get('created_at'))
+        if (stamp < last or stamp > updated or not _meeting_source(event.get('source_id'))
+                or event['source_id'] in seen or event.get('provider') not in people
+                or event.get('stage') not in MEETING_STAGES):
+            raise ValueError('会议阶段身份或顺序无效。')
+        if event['stage'] == 'summary' and event['provider'] != settings['host']:
+            raise ValueError('会议总结必须由冻结的主持提供。')
+        status = event.get('status')
+        if status == 'linked':
+            if (event['provider'] != 'agy' or not _meeting_id(event.get('turn_id'))
+                    or event.get('text') != '' or event.get('source_url') != '' or event.get('detail') != ''):
+                raise ValueError('CLI 会议阶段关联无效。')
+            _native_meeting_turn(conv, value, event)
+        else:
+            if not isinstance(status, str) or status not in MEETING_OBSERVED or event.get('turn_id') is not None:
+                raise ValueError('会议阶段状态无效。')
+            if event['provider'] == 'agy' and status in ('sending', 'waiting', 'completed'):
+                raise ValueError('Agy 发言必须来自关联的实际 CLI 任务。')
+            text = _meeting_text(event.get('text'), 12000, '会议正文', required=status == 'completed')
+            if status != 'completed' and text:
+                raise ValueError('非完成阶段不能伪装为已取得发言。')
+            _meeting_text(event.get('detail'), 1000, '会议阶段说明', required=status in ('failed', 'unavailable', 'cancelled'))
+            _meeting_url(event['provider'], event.get('source_url'), required=status == 'completed')
+        seen.add(event['source_id']);last = stamp
+    if updated != last:
+        raise ValueError('会议更新时间与阶段记录不一致。')
+    _project_meeting(conv, value)
+    return copy.deepcopy(value)
+
+
+def validate_meetings(conv):
+    return _validate_meetings(conv)
+
+
+def _validate_meetings(conv, pending_turn_id=None):
+    # Only link_meeting_turn may temporarily exempt its one new candidate turn;
+    # persistent/imported state must never contain a one-sided meeting link.
+    meetings = conv.get('roundtable_meetings', [])
+    if not isinstance(meetings, list) or len(meetings) > MEETING_LIMIT:
+        raise ValueError('会议数量超过限制，请保留既有会议。')
+    ids, sources, turn_ids, total, result = set(), set(), set(), 0, []
+    for value in meetings:
+        clean = _validate_meeting(conv, value)
+        if clean['id'] in ids or clean['source_id'] in sources:
+            raise ValueError('会议身份或来源重复。')
+        for event in clean['events']:
+            if event['turn_id']:
+                if event['turn_id'] in turn_ids:
+                    raise ValueError('同一 CLI 任务不能归属于多个会议阶段。')
+                turn_ids.add(event['turn_id'])
+        ids.add(clean['id']);sources.add(clean['source_id'])
+        total += len(json.dumps(clean, ensure_ascii=False).encode('utf-8'))
+        result.append(clean)
+    if total > MEETING_BYTES:
+        raise ValueError('会议记录已达容量限制，请保留原记录。')
+    for turn in conv.get('turns', []):
+        if isinstance(turn, dict) and ('meeting_id' in turn or 'meeting_stage' in turn):
+            if pending_turn_id is not None and turn.get('id') == pending_turn_id:
+                continue
+            if (not _meeting_id(turn.get('id')) or not _meeting_id(turn.get('meeting_id'))
+                    or not isinstance(turn.get('meeting_stage'), str)
+                    or turn['meeting_stage'] not in MEETING_STAGES or turn['id'] not in turn_ids):
+                raise ValueError('CLI 任务缺少对应的会议阶段关联，原记录保留。')
+    return result
+
+
+def new_meeting(conv, body, ident, stamp):
+    if (not isinstance(body, dict) or set(body) - {'codex_thread_id', 'source_id', 'topic', 'branch'}
+            or not {'codex_thread_id', 'source_id', 'topic'} <= set(body)):
+        raise ValueError('新会议请求字段无效。')
+    thread = _meeting_identity(conv, body.get('codex_thread_id'))
+    topic = _meeting_text(body.get('topic'), 1000, '会议议题', required=True)
+    if not _meeting_source(body.get('source_id')):
+        raise ValueError('会议来源标识无效。')
+    branch = body.get('branch', conv.get('primary_branch') or 'main')
+    if not isinstance(branch, str) or branch not in conv.get('branches', {}):
+        raise ValueError('会议工作会话无效。')
+    records = validate_meetings(conv)
+    existing = next((item for item in records if item['source_id'] == body['source_id']), None)
+    if existing is not None:
+        if any(existing[key] != value for key, value in
+               (('codex_thread_id', thread), ('topic', topic), ('branch', branch))):
+            raise ValueError('同一来源已有不同圆桌，原会议已保留。')
+        return existing
+    _meeting_allowed(conv)
+    plan = roundtable_plan(conv)
+    if not plan['ready']:
+        raise ValueError('圆桌当前不可创建：' + plan['reason'])
+    meeting = {'schema_version': 1, 'id': ident, 'source_id': body.get('source_id'),
+               'codex_thread_id': thread, 'topic': topic, 'branch': branch,
+               'roundtable': roundtable(conv), 'participants': list(plan['participants']),
+               'created_at': stamp, 'updated_at': stamp, 'events': []}
+    clean = _validate_meeting(conv, meeting)
+    validate_meetings(dict(conv, roundtable_meetings=records + [clean]))
+    return clean
+
+
+def _find_meeting(conv, ident, pending_turn_id=None):
+    if not _meeting_id(ident):
+        raise ValueError('会议标识无效。')
+    meetings = _validate_meetings(conv, pending_turn_id=pending_turn_id)
+    meeting = next((meeting for meeting in meetings if meeting['id'] == ident), None)
+    if meeting is None:
+        raise ValueError('本聊天没有该会议。')
+    return meetings, meeting
+
+
+def _meeting_candidate(conv, meetings, meeting, event):
+    candidate = copy.deepcopy(meeting)
+    candidate['events'].append(event)
+    candidate['updated_at'] = event['created_at']
+    values = [candidate if item['id'] == meeting['id'] else item for item in meetings]
+    validate_meetings(dict(conv, roundtable_meetings=values))
+    return candidate
+
+
+def record_meeting_event(conv, meeting_id, body, stamp):
+    if (not isinstance(body, dict) or set(body) - {'codex_thread_id', 'source_id', 'provider', 'stage', 'status', 'text', 'source_url', 'detail'}
+            or not {'codex_thread_id', 'source_id', 'provider', 'stage', 'status'} <= set(body)):
+        raise ValueError('会议阶段更新字段无效。')
+    _meeting_identity(conv, body.get('codex_thread_id'))
+    if (not isinstance(body.get('provider'), str) or body['provider'] not in HOSTS
+            or not isinstance(body.get('stage'), str) or body['stage'] not in MEETING_STAGES
+            or not isinstance(body.get('status'), str) or body['status'] not in MEETING_OBSERVED):
+        raise ValueError('会议提供方、阶段或状态无效。')
+    meetings, meeting = _find_meeting(conv, meeting_id)
+    event = {key: body.get(key, '') for key in ('source_id', 'provider', 'stage', 'status', 'text', 'source_url', 'detail')}
+    event.update(turn_id=None, created_at=stamp)
+    previous = next((old for old in meeting['events'] if old['source_id'] == event['source_id']), None)
+    if previous is not None:
+        if any(previous[key] != event[key] for key in event if key != 'created_at'):
+            raise ValueError('同一来源已保存不同的会议记录，原记录保留。')
+        return copy.deepcopy(meeting), True
+    slot = next((slot for slot in _project_meeting(conv, meeting)
+                 if slot['provider'] == event['provider'] and slot['stage'] == event['stage']), None)
+    if slot is None:
+        raise ValueError('会议发言不属于冻结参与方或阶段。')
+    # Pausing blocks new transmissions. It must not discard the actual outcome
+    # of an already attempted send, or prevent an explicit unsent/unavailable
+    # receipt from finishing an honest partial meeting.
+    observing_attempt = (slot['status'] in ('sending', 'waiting')
+                         and event['status'] in ('waiting', 'completed', 'failed', 'cancelled'))
+    skipping_unsent = slot['status'] == 'pending' and event['status'] == 'unavailable'
+    if not (observing_attempt or skipping_unsent):
+        _meeting_allowed(conv, event['provider'])
+        if roundtable(conv)['mode'] != 'roundtable':
+            raise ValueError('圆桌模式已关闭，未记录新的阶段活动。')
+        host = meeting['roundtable']['host']
+        if host != 'codex':
+            _meeting_allowed(conv, host)
+    return _meeting_candidate(conv, meetings, meeting, event), False
+
+
+def link_meeting_turn(conv, meeting_id, stage, turn, stamp):
+    if not isinstance(turn, dict) or not _meeting_id(turn.get('id')):
+        raise ValueError('会议 CLI 任务标识无效。')
+    if not isinstance(stage, str) or stage not in MEETING_STAGES:
+        raise ValueError('会议 CLI 阶段无效。')
+    meetings, meeting = _find_meeting(conv, meeting_id, pending_turn_id=turn['id'])
+    event = {'source_id': 'native:' + turn['id'], 'provider': 'agy', 'stage': stage,
+             'status': 'linked', 'text': '', 'source_url': '', 'detail': '',
+             'turn_id': turn['id'], 'created_at': stamp}
+    existing = next((old for old in meeting['events'] if old['source_id'] == event['source_id']), None)
+    if existing:
+        if any(existing[key] != event[key] for key in event if key != 'created_at'):
+            raise ValueError('CLI 任务已关联其他阶段。')
+        return copy.deepcopy(meeting)
+    _meeting_allowed(conv, 'agy')
+    # Caller passes a candidate conversation that already includes the new turn;
+    # it can then persist the turn and updated meeting atomically under its lock.
+    _native_meeting_turn(conv, meeting, event)
+    return _meeting_candidate(conv, meetings, meeting, event)
+
+
+def meeting_view(conv, meeting):
+    value = _validate_meeting(conv, meeting)
+    slots = _project_meeting(conv, value)
+    terminal = lambda slot: slot['status'] in MEETING_TERMINAL or slot['status'] == 'interrupted'
+    summary = slots[-1]
+    status = ('completed' if all(slot['status'] == 'completed' for slot in slots) else 'partial') if terminal(summary) else 'active'
+    phase = ('finished' if terminal(summary) else 'proposal' if any(not terminal(slot) for slot in slots if slot['stage'] == 'proposal')
+             else 'review' if any(not terminal(slot) for slot in slots if slot['stage'] == 'review') else 'summary')
+    speakers = [dict(provider=slot['provider'], stage=slot['stage'], role='host' if slot['provider'] == value['roundtable']['host'] else 'participant',
+                     text=slot['text'], source_url=slot['source_url'], turn_id=slot['turn_id'],
+                     text_truncated=slot['text_truncated'], detail=slot['detail'],
+                     created_at=slot['updated_at'], provenance='native_cli' if slot['provider'] == 'agy' else 'codex_observed')
+                for slot in slots if slot['status'] == 'completed' and slot['text']]
+    # Base events are not repeated in rendered snapshots; each actual speech
+    # appears once, in its own stage, regardless of native task pagination.
+    result = {key: value[key] for key in value if key != 'events'}
+    latest = max([value['updated_at']] + [slot['updated_at'] for slot in slots if slot['updated_at']], key=_meeting_stamp)
+    import hashlib
+    fingerprint = hashlib.sha256(json.dumps(slots, ensure_ascii=False, sort_keys=True).encode('utf-8')).hexdigest()[:20]
+    result.update(host=value['roundtable']['host'], rounds=2, status=status, phase=phase,
+                  updated_at=latest, slots=slots, speakers=speakers, completed_count=sum(slot['status'] == 'completed' for slot in slots),
+                  total_count=len(slots), revision=str(len(value['events'])) + ':' + fingerprint)
+    return result
+
+
+def meeting_summary(view):
+    return {key: copy.deepcopy(view[key]) for key in ('schema_version', 'id', 'source_id', 'codex_thread_id',
+            'branch', 'topic', 'host', 'participants', 'rounds', 'created_at', 'updated_at',
+            'status', 'phase', 'completed_count', 'total_count', 'revision')}
+
 def default_policy_path():
     if sys.platform == 'darwin':
         return Path.home() / 'Library/Application Support/AgyConsole/coordination.json'

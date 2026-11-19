@@ -707,3 +707,43 @@ body:not(.welcome-view) .run-status{grid-column:1/-1;grid-row:1;margin:0;padding
   body:not(.welcome-view) .topbar{height:54px;min-height:54px}
   body:not(.welcome-view) #prompt{max-height:min(140px,25dvh)}
 }
+
+/* .14: Codex commands and roundtable speeches share the assistant baseline. */
+.provider-avatar{flex-basis:28px;width:28px;height:28px;border:0;border-radius:8px;overflow:hidden}
+.provider-avatar--codex,.provider-avatar--muse,
+:root[data-theme="light"] .provider-avatar--codex,
+:root[data-theme="light"] .provider-avatar--muse{background:transparent}
+.provider-avatar img,#messages .message-label>img{display:block;width:28px;height:28px;object-fit:contain;border-radius:8px}
+.codex-dispatch .message-body{white-space:pre-wrap;line-height:1.8;overflow-wrap:anywhere;color:var(--text)}
+.dispatch-turn-label{color:var(--muted);font-size:12px;font-weight:400}
+
+.muse-orb{width:28px;height:28px;border-radius:8px;background:transparent;overflow:hidden;flex-shrink:0}
+.muse-orb img{display:block;width:28px;height:28px;object-fit:contain}
+
+/* Independent meeting records share one compact, source-labelled timeline. */
+.meeting-card{border:1px solid var(--line);border-radius:15px;padding:16px 18px;background:var(--panel);min-width:0;overflow:hidden}
+.meeting-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.meeting-heading>div{min-width:0;flex:1}.meeting-eyebrow{font-size:12px;color:var(--muted);line-height:1.5}
+.meeting-heading h2{font-size:17px;line-height:1.55;font-weight:600;margin:4px 0 0;overflow-wrap:anywhere;color:var(--text)}
+.meeting-state{font-size:12px;white-space:nowrap;border:1px solid var(--line);border-radius:20px;padding:3px 8px;color:var(--muted);line-height:1.5}
+.meeting-state--completed{color:var(--green)}.meeting-state--active{color:var(--accent)}.meeting-state--partial{color:#c9a365}
+.meeting-overview{display:flex;align-items:center;flex-wrap:wrap;gap:5px 13px;font-size:12px;color:var(--muted);margin:10px 0 0}.meeting-overview time{margin-left:auto}
+.meeting-round{border-top:1px solid var(--line);margin-top:13px;padding-top:12px}.meeting-round>h3{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:550;margin:0 0 9px;color:var(--text)}
+.meeting-round>h3>span{font-size:11px;font-variant-numeric:tabular-nums;color:var(--muted);font-weight:400}.meeting-round>h3>small{margin-left:auto;color:var(--muted);font-weight:400;font-size:12px}
+.meeting-progress-note{margin:8px 0 0;font-size:12px;line-height:1.6;color:var(--muted)}
+.meeting-round--future{margin-top:10px;padding-top:10px}.meeting-round--future>h3{margin:0;color:var(--muted)}
+.meeting-round-slots{display:flex;flex-direction:column;gap:12px}.meeting-slot{min-width:0}.meeting-slot-heading{display:flex;align-items:center;gap:8px;min-height:28px;font-size:13px;color:var(--text)}
+.meeting-slot-heading .provider-avatar,.meeting-avatar{width:24px;height:24px;flex-basis:24px;border-radius:7px}.meeting-slot-heading .provider-avatar img{width:24px;height:24px;border-radius:7px}.meeting-avatar{display:block;object-fit:contain}
+.meeting-slot-heading strong{font-size:13px;font-weight:550}.meeting-host-label{font-size:11px;color:var(--muted);font-weight:400}
+.meeting-slot-state{margin-left:auto;font-size:12px;color:var(--muted);text-align:right}.meeting-slot--completed .meeting-slot-state{color:var(--green)}.meeting-slot--failed .meeting-slot-state,.meeting-slot--unavailable .meeting-slot-state{color:#d5a293}
+.meeting-slot-text{padding-left:32px;margin-top:7px;line-height:1.75}.meeting-slot-text>p:last-child{margin-bottom:0}.meeting-slot-detail{margin:6px 0 0 32px;color:var(--muted);font-size:12px;line-height:1.6;overflow-wrap:anywhere;white-space:pre-wrap}
+.meeting-slot-meta{display:flex;align-items:center;flex-wrap:wrap;gap:5px 12px;margin:6px 0 0 32px;color:var(--muted);font-size:11px;line-height:1.5}.meeting-slot-meta:empty{display:none}.meeting-slot-meta>span:empty{display:none}.meeting-slot-meta a{text-decoration:underline;text-underline-offset:2px}.meeting-slot-meta .copy-reply{font-size:11px;padding:0 2px}
+.meeting-slot--pending .meeting-slot-meta{display:none}.meeting-slot--pending .meeting-slot-heading{opacity:.75}
+.meeting-footer{margin-top:15px;padding-top:11px;border-top:1px solid var(--line);color:var(--muted);font-size:11px;line-height:1.65;overflow-wrap:anywhere}
+.dispatch-details>summary{cursor:pointer;display:flex;gap:8px;align-items:flex-start;list-style:none;font-size:13px;line-height:1.7;color:var(--muted);white-space:normal;min-width:0}
+.dispatch-details>summary::-webkit-details-marker{display:none}.dispatch-chevron{font-size:20px;line-height:1.1;flex:0 0 12px}.dispatch-details[open] .dispatch-chevron{transform:rotate(90deg)}
+.dispatch-preview{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;min-width:0;flex:1}.dispatch-expand-hint{font-size:11px;flex-shrink:0;color:var(--muted);padding-top:1px}.dispatch-details[open] .dispatch-preview{-webkit-line-clamp:1}.dispatch-full-text{margin-top:9px;white-space:pre-wrap;overflow-wrap:anywhere}.dispatch-details[open]>summary{margin-bottom:5px}
+:root[data-theme="light"] .meeting-state--partial{color:#86631f}:root[data-theme="light"] .meeting-slot--failed .meeting-slot-state,:root[data-theme="light"] .meeting-slot--unavailable .meeting-slot-state{color:#98533c}
+@media(max-width:740px){.meeting-card{padding:13px 12px;border-radius:12px}.meeting-heading h2{font-size:16px}.meeting-heading{gap:8px}.meeting-slot-text{padding-left:0}.meeting-slot-detail,.meeting-slot-meta{margin-left:0}.meeting-overview{gap:5px 10px}.meeting-footer{font-size:12px}.dispatch-details>summary{gap:6px}.dispatch-expand-hint{font-size:11px}}
+
+.meetings-paging{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:5px 10px;margin:4px 0 8px;padding:4px 10px;font-size:12px;color:var(--muted)}.meetings-paging button{border:1px solid var(--line);border-radius:7px;padding:3px 8px;background:var(--panel);color:var(--text);font-size:12px;line-height:1.5}.meetings-paging button:disabled{opacity:.5}

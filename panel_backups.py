@@ -14,7 +14,7 @@ import zipfile
 from collaboration_review import validate_review
 from quota_failover import clean_order, clean_fallback
 from software_updates import SoftwareUpdates
-from multi_ai_collaboration import canonical as collaboration_policy, portable as portable_collaboration, validate as validate_collaboration, portable_roundtable, validate_roundtable, validate_roundtable_messages
+from multi_ai_collaboration import canonical as collaboration_policy, portable as portable_collaboration, validate as validate_collaboration, portable_roundtable, validate_roundtable, validate_roundtable_messages, validate_meetings
 
 MAX_UPLOAD = 64 * 1024 * 1024
 MAX_EXPANDED = 512 * 1024 * 1024
@@ -160,6 +160,7 @@ def validate_state(value):
         if not isinstance(conv.get('turns'), list) or len(conv['turns']) > 20000:
             raise ValueError('备份中的聊天记录无效。')
         validate_roundtable_messages(conv)
+        validate_meetings(conv)
         for turn in conv['turns']:
             if (not isinstance(turn, dict) or not isinstance(turn.get('id'), str) or not HEX.fullmatch(turn['id'])
                     or turn['id'] in turn_ids or turn.get('branch') not in branches

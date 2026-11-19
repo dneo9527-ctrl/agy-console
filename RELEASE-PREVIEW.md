@@ -1,13 +1,9 @@
-> Local development candidate: **0.1.0-preview.13**, not yet published. See [scope, full-upgrade requirements and verification](docs/DEVELOPMENT-PREVIEW13.md). The historical release evidence below remains preview.8.
+# Agy Console 0.1.0-preview.15 发布范围
 
-# Agy Console v0.1.0-preview.8 发布范围
+本版以公开 MIT 开发者预览发行，配套 codex-skills 0.1.0-preview.4。完整包同时包含 agy-console 与九文件 external-ai-team Skill、显式安装器和接入说明；默认 assist 保留单提供方，明确 roundtable 才组织活跃任务中的独立两轮会议。
 
-公开仓库 `dneo9527-ctrl/agy-console`，MIT，标签 `v0.1.0-preview.8`，标记预览版。
+交付干净源码 ZIP、Mac/Linux 完整源码预览、Windows x64 原生安装向导和内置运行时的便携完整包、双平台独立 Skill ZIP、平台验证记录与 SHA256SUMS。由 preview.8 升级必须使用完整包，本版不交付 program-only ZIP 或 updates.json。旧标签和附件保留。
 
-交付：干净源码 ZIP、Mac/Linux 源码预览完整包、Windows x64 原生安装向导与含固定运行时的便携完整包、Mac/Linux 四个目标的程序更新 ZIP、updates.json 与 SHA256SUMS。Windows 通过完整 setup.exe 或便携包升级；不在共享清单中投放可能跳过稳定启动器升级的 Windows 程序包。
+原始开发冻结为197文件；发行候选保留公开 .13 修正并整合配套 Skill，共216源文件。准确提交的 CI、真实安装/升级、临时 Skill 安装及草稿/匿名下载结果以最终 Release 和 PLATFORM-VERIFICATION.json 为准。
 
-本版合并权限拒绝与历史额度错误隔离、五色主题、候补设置和配置传输改进，保留公开 .6 回环绑定与 .7 Windows 原生安装器、Job 管理和维护互斥。旧版本标签与附件保留。
-
-冻结输出摘要见 source-freeze.json。使用允许列表构建，不含 data、用户配置、官方登录或内部日志。准确提交的 CI、附件回下校验与升级验证结果见 Release；本机测试不能代替远端验收。
-
-未验证：Windows 用户硬件上的官方 CLI 登录/模型调用、SmartScreen/Defender 全环境、全新 Mac 隔离首开、旧系统实机、Apple 公证。Python 与第三方运行时保留各自许可。
+Windows/Linux 真实官方登录和模型调用、全新硬件与旧系统、所有旧窗口自动加载未验收。无 Developer ID/公证或 Windows 发布者签名。记录或开关不代表模型已执行，不唤醒闲置 Codex，也不采集后台网页。Bark 可选接口另见 docs/BARK.md，手机实收不在本版结论内。

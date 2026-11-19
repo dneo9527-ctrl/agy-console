@@ -152,6 +152,11 @@ def main():
     parser.add_argument('--review-turn', help='Record explicit Codex decisions for this existing turn; calls no model')
     parser.add_argument('--review-file', help='JSON review with summary, items and verification')
     parser.add_argument('--record-message', help='Record one genuinely observed roundtable contribution from a JSON file; calls no model')
+    parser.add_argument('--meeting-create', help='Create one independent meeting from exact-thread JSON; starts no model')
+    parser.add_argument('--meeting-event', help='Record one actual meeting event from JSON; starts no model')
+    parser.add_argument('--meeting-view', help='Read one exact meeting ID, or list recent meetings; starts no model')
+    parser.add_argument('--meeting', help='Link this Agy dispatch to an existing independent meeting ID')
+    parser.add_argument('--meeting-stage', choices=('proposal', 'review', 'summary'), help='Frozen stage for --meeting task dispatch')
     args = parser.parse_args()
     if not args.thread_id or not UUID.fullmatch(args.thread_id):
         parser.error('需要当前 Codex 聊天 ID；请使用 CODEX_THREAD_ID 或 --thread-id。')
@@ -169,6 +174,53 @@ def main():
         parser.error('--ensure 只读或保存偏好，不能混入任务派发/导入。')
     if args.auto_open and not args.ensure:
         parser.error('--auto-open 仅用于 --ensure，不会启动模型。')
+    controls = [args.meeting_create, args.meeting_event, args.meeting_view]
+    if sum(bool(value) for value in controls) > 1:
+        parser.error('会议创建、记录和读取请分别执行。')
+    if bool(args.meeting) != bool(args.meeting_stage):
+        parser.error('--meeting 和 --meeting-stage 需一起用于任务派发。')
+    if args.meeting and (not re.fullmatch(r'[a-f0-9]{32}', args.meeting)
+            or not args.task_file or args.ensure or args.import_result or args.stage_import
+            or args.record_message or args.review_turn or args.review_file or any(controls) or args.kind != 'text'):
+        parser.error('会议任务只可关联明确会议ID与阶段，不与设置/导入/记录混用。')
+    if any(controls):
+        if (args.task_file or args.ensure or args.import_result or args.stage_import
+                or args.review_turn or args.review_file or args.record_message or args.context
+                or args.model or args.out or args.branch or args.branch_title or args.no_wait
+                or args.meeting or args.meeting_stage or args.kind != 'text'):
+            parser.error('会议记录操作不启动模型，不能与任务或偏好操作混用。')
+        body, mid = None, None
+        if args.meeting_view:
+            if args.meeting_view != 'list' and not re.fullmatch(r'[a-f0-9]{32}', args.meeting_view):
+                parser.error('--meeting-view 需为本聊天的会议ID或list。')
+        else:
+            path = Path(args.meeting_create or args.meeting_event)
+            if not path.is_file() or path.stat().st_size > 65536:
+                parser.error('会议文件需为64KB以内的 JSON。')
+            try:
+                body = json.loads(path.read_text(encoding='utf-8'))
+            except (ValueError, UnicodeError):
+                parser.error('请选择有效的 UTF-8 会议 JSON。')
+            if not isinstance(body, dict) or body.get('codex_thread_id') != args.thread_id:
+                parser.error('会议操作必须属于当前确切Codex聊天。')
+            if args.meeting_event:
+                mid = body.pop('meeting_id', None)
+                if not isinstance(mid, str) or not re.fullmatch(r'[a-f0-9]{32}', mid):
+                    parser.error('会议事件文件缺少明确meeting_id。')
+        client = Client(args.url)
+        conv = client.bind(args.thread_id)
+        if not client.features.get('roundtable_meetings'):
+            raise ValueError('独立圆桌记录需从原前台控制台加载新版后台。')
+        base = '/api/conversations/' + conv['id'] + '/meetings'
+        if args.meeting_view:
+            result = client.request(base + ('' if args.meeting_view == 'list' else '/' + args.meeting_view))
+        else:
+            if args.meeting_create:
+                result = client.request(base, body)
+            else:
+                result = client.request(base + '/' + mid + '/events', body)
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
     if args.record_message:
         if (args.task_file or args.ensure or args.import_result or args.stage_import
                 or args.review_turn or args.review_file or args.context or args.model
@@ -252,6 +304,8 @@ def main():
                           'multi_ai_collaboration_supported':bool(client.features.get('multi_ai_collaboration')),
                           **({'multi_ai_collaboration':multi} if multi is not None else {}),
                           'roundtable_host_supported':bool(client.features.get('roundtable_host')),
+                          'roundtable_meetings_supported':bool(client.features.get('roundtable_meetings')),
+                          'meeting_summaries':conv.get('meeting_summaries', []),
                           **({'roundtable':meeting, 'roundtable_plan':plan} if meeting is not None else {}),
                           'console_startup_supported':bool(client.features.get('console_startup')),
                           'auto_start_console':conv.get('auto_start_console') is True,
@@ -316,15 +370,20 @@ def main():
     if multi is None and conv.get('gpt_collaboration') is False:
         raise ValueError('这条聊天已暂停协作。请在固定页面重新开启；仍可在网页手动给 Agy 发任务。')
     meeting, plan = roundtable_metadata(conv, args.thread_id, client.features)
-    if meeting is not None and meeting['mode'] == 'roundtable' and not plan['ready']:
+    if not args.meeting and meeting is not None and meeting['mode'] == 'roundtable' and not plan['ready']:
         raise ValueError('圆桌主持或参与方已暂停，未派发；请检查当前聊天设置。')
+    if args.meeting and not client.features.get('roundtable_meetings'):
+        raise ValueError('独立会议任务需先加载新版后台。')
     selection_state = client.request('/api/state?summary=1') if not args.model and not client.features.get('window_models') else {}
     model = args.model or ('' if client.features.get('window_models') else default_model(selection_state))
     turn = client.request('/api/conversations/' + conv['id'] + '/turns', {'prompt':prompt, 'model':model, 'kind':args.kind, 'codex_dispatch':True,
-                          **({'branch':args.branch, 'branch_title':args.branch_title} if args.branch else {})})
+                          **({'branch':args.branch, 'branch_title':args.branch_title} if args.branch else {}),
+                          **({'meeting_id':args.meeting, 'meeting_stage':args.meeting_stage} if args.meeting else {})})
     print(json.dumps({'submitted': True, 'url': fixed_url, 'turn_id': turn['id'], 'model': turn.get('model', model),
                       'model_selection': 'explicit' if args.model else 'window_or_global' if client.features.get('window_models') else 'global_default' if selection_state.get('preferred_model') else 'available_quota_default',
                       **({'roundtable':turn['roundtable'], 'roundtable_role':turn.get('roundtable_role')} if 'roundtable' in turn else {}),
+                      'duplicate_submission':turn.get('duplicate_submission', False),
+                      **({'meeting_id':turn['meeting_id'], 'meeting_stage':turn['meeting_stage']} if 'meeting_id' in turn else {}),
                       'panel_action': panel_action(conv, fixed_url)}, ensure_ascii=False), flush=True)
     if args.no_wait:
         return 0

@@ -30,7 +30,7 @@
     "task_progress.py",
     "task_queue.py",
     "update_bootstrap.py",
-    "\u542f\u52a8\u63a7\u5236\u53f0.command"
+    "启动控制台.command"
   ],
   "developer_files": [
     "CHANGELOG.md",
@@ -180,7 +180,7 @@
     "windows/requirements.txt",
     "windows/self_test.py",
     "windows/update_bootstrap.py",
-    "\u542f\u52a8\u63a7\u5236\u53f0.command"
+    "启动控制台.command"
   ],
   "program_files": {
     "macos-arm64": [
@@ -349,6 +349,7 @@
     "docs/BARK.md",
     "docs/CODEX-SKILL.md",
     "docs/DEVELOPMENT-PREVIEW13.md",
+    "docs/DEVELOPMENT-PREVIEW15.md",
     "docs/INSTALL.md",
     "docs/PRIVACY.md",
     "docs/RELEASING.md",
@@ -393,6 +394,7 @@
     "skills/external-ai-team/install.py",
     "skills/external-ai-team/references/antigravity.md",
     "skills/external-ai-team/references/collaboration-controls.md",
+    "skills/external-ai-team/references/roundtable.md",
     "skills/external-ai-team/scripts/collaboration_policy.py",
     "skills/external-ai-team/scripts/console_start.py",
     "software_updates.py",
@@ -435,6 +437,7 @@
     "test_light_ui.js",
     "test_live_memory.js",
     "test_loopback_bind.py",
+    "test_meeting_integration.py",
     "test_model_controls.js",
     "test_model_families.js",
     "test_model_order.js",
@@ -453,6 +456,10 @@
     "test_quota_settings.js",
     "test_roundtable.py",
     "test_roundtable_bridge.py",
+    "test_roundtable_meeting_bridge.py",
+    "test_roundtable_meeting_http.py",
+    "test_roundtable_meetings.py",
+    "test_roundtable_meetings_ui.js",
     "test_roundtable_message_bridge.py",
     "test_roundtable_messages.py",
     "test_roundtable_messages_ui.js",
@@ -481,7 +488,7 @@
     "windows/Self-Test.cmd",
     "windows/Start-Agy.cmd",
     "windows/THIRD-PARTY.json",
-    "windows/Windows-Codex-\u63d0\u793a\u8bcd.txt",
+    "windows/Windows-Codex-提示词.txt",
     "windows/app/CHANGELOG.md",
     "windows/app/UPDATE-PROTOCOL.md",
     "windows/app/VERSION",
@@ -530,9 +537,10 @@
     "windows/skills/external-ai-team/install.py",
     "windows/skills/external-ai-team/references/antigravity.md",
     "windows/skills/external-ai-team/references/collaboration-controls.md",
+    "windows/skills/external-ai-team/references/roundtable.md",
     "windows/skills/external-ai-team/scripts/collaboration_policy.py",
     "windows/skills/external-ai-team/scripts/console_start.py",
     "windows/update_bootstrap.py",
-    "\u542f\u52a8\u63a7\u5236\u53f0.command"
+    "启动控制台.command"
   ]
 }

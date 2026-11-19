@@ -643,7 +643,7 @@ function conversationMeta(id){return snapshot.conversations.find(c=>c.id===id);}
 function turnCount(conv){return conv?.turn_count??conv?.turns.length??0;}
 function sessionGroups(){return typeof snapshot!=='undefined'&&snapshot.service?.features?.session_groups===true;}
 function selectedBranch(conv){if(!sessionGroups())return null;const branches=conv?.branches||{};return conv?.id===activeId&&branches[activeBranch]?activeBranch:branches[conv?.primary_branch]?conv.primary_branch:Object.keys(branches)[0]||null;}
-function active(){const meta=conversationMeta(activeId),page=conversationPages.get(pageCacheKey(activeId))?.value;if(!meta)return null;if(page)return {...page,...meta,turns:page.turns,roundtable_messages:page.roundtable_messages,page:page.page,summary:page.summary,turn_count:sessionGroups()?page.page.total:Math.max(turnCount(meta),turnCount(page))};return !meta.summary&&meta.turns.length>PAGE_SIZE?localConversationPage(meta,{}):meta;}
+function active(){const meta=conversationMeta(activeId),page=conversationPages.get(pageCacheKey(activeId))?.value;if(!meta)return null;if(page)return {...page,...meta,turns:page.turns,roundtable_messages:page.roundtable_messages,roundtable_meetings:page.roundtable_meetings,meeting_summaries:page.meeting_summaries||[],meeting_count:page.meeting_count??meta.meeting_count,page:page.page,summary:page.summary,turn_count:sessionGroups()?page.page.total:Math.max(turnCount(meta),turnCount(page))};return !meta.summary&&meta.turns.length>PAGE_SIZE?localConversationPage(meta,{}):meta;}
 function restoredTaskKind(conv){const kind=sessionGroups()?conv?.branches?.[selectedBranch(conv)]?.last_kind:conv?.turns.at(-1)?.kind;return kind==='image'?'image':'text';}
 function composerTurn(conv){const meta=conversationMeta(conv?.id)||conv,branch=selectedBranch(meta);return meta?.turns.find(t=>isBusy(t.status)&&(!branch||t.branch===branch));}
 function fixedOwnerConversation(){const owner=sessionStorage.getItem('agy-codex-owner');return owner?snapshot.conversations.find(c=>c.codex_thread_id===owner):null;}
@@ -715,7 +715,7 @@ function syncMessageRows(view,rows){
   }
   return changed;
 }
-function pageTag(meta){return meta.summary?String(meta.revision):JSON.stringify([meta.title,meta.agy_id,meta.updated_at,meta.turns.map(t=>[t.id,t.status,t.response?.length,t.error,t.images?.length,t.source]),meta.roundtable_messages||[]]);}
+function pageTag(meta){return meta.summary?String(meta.revision):JSON.stringify([meta.title,meta.agy_id,meta.updated_at,meta.turns.map(t=>[t.id,t.status,t.response?.length,t.error,t.images?.length,t.source]),meta.roundtable_messages||[],meta.roundtable_meetings||[]]);}
 function roundtableSourceURL(message){
   if(!['muse','claude'].includes(message?.provider)||typeof message.source_url!=='string'||message.source_url!==message.source_url.trim())return '';
   try{
@@ -729,7 +729,7 @@ function localConversationPage(meta,params){
   if(params.before||params.after||params.around){index=turns.findIndex(t=>t.id===(params.before||params.after||params.around));if(index<0)throw new Error('页位置已变化，请返回最新对话。');}
   if(params.around){start=Math.max(0,index-Math.floor(PAGE_SIZE/2));end=Math.min(total,start+PAGE_SIZE);}else if(params.before){end=index;start=Math.max(0,end-PAGE_SIZE);}else if(params.after){start=index+1;end=Math.min(total,start+PAGE_SIZE);}else{end=total;start=Math.max(0,end-PAGE_SIZE);}
   const chosen=turns.slice(start,end);
-  return {...meta,summary:false,turn_count:total,turns:chosen,roundtable_messages:roundtableMessages({...meta,turns:chosen}),page:{start:chosen.length?start+1:0,end,total,branch:params.branch||null,has_older:start>0,has_newer:end<total,first_id:chosen[0]?.id,last_id:chosen.at(-1)?.id}};
+  return {...meta,summary:false,turn_count:total,turns:chosen,roundtable_messages:roundtableMessages({...meta,turns:chosen}),roundtable_meetings:!params.before&&!params.after&&!params.around?roundtableMeetings(meta).filter(meeting=>!params.branch||meeting.branch===params.branch).slice(-10):[],page:{start:chosen.length?start+1:0,end,total,branch:params.branch||null,has_older:start>0,has_newer:end<total,first_id:chosen[0]?.id,last_id:chosen.at(-1)?.id}};
 }
 function roundtableMessages(conv){
   if(!Array.isArray(conv?.roundtable_messages)||!conv.roundtable_messages.length||typeof conv.codex_thread_id!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(conv.codex_thread_id))return [];
@@ -744,6 +744,29 @@ function roundtableMessages(conv){
     seen.add(message.id);sources.add(message.source_id);return true;
   });
 }
+function roundtableMeetings(conv){
+  if(!Array.isArray(conv?.roundtable_meetings)||typeof conv.codex_thread_id!=='string'||!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(conv.codex_thread_id))return [];
+  const seen=new Set(),providers=['codex','agy','muse','claude'],statuses=['pending','sending','waiting','queued','running','completed','failed','unavailable','cancelled','interrupted','cancelling'];
+  return conv.roundtable_meetings.slice(-20).filter(meeting=>{
+    if(!meeting||typeof meeting.id!=='string'||!/^[a-f0-9]{32}$/.test(meeting.id)||seen.has(meeting.id)||meeting.codex_thread_id!==conv.codex_thread_id)return false;
+    const host=meeting.host||meeting.roundtable?.host,people=meeting.participants;
+    if(!providers.includes(host)||!Array.isArray(people)||people.length<2||people.length>4||new Set(people).size!==people.length||!people.includes('codex')||!people.includes(host)||people.some(p=>!providers.includes(p))||meeting.rounds!==2)return false;
+    if(typeof meeting.branch!=='string'||!/^[a-z][a-z0-9_-]{0,39}$/.test(meeting.branch)||conv.page?.branch&&meeting.branch!==conv.page.branch)return false;
+    if(typeof meeting.topic!=='string'||!meeting.topic.trim()||meeting.topic.length>2000||!['active','completed','partial','cancelled'].includes(meeting.status)||!Number.isFinite(Date.parse(meeting.created_at))||!Number.isFinite(Date.parse(meeting.updated_at)))return false;
+    if(!Array.isArray(meeting.slots)||meeting.slots.length!==people.length*2+1)return false;
+    const slots=new Set();
+    for(const slot of meeting.slots){
+      const key=slot?.provider+':'+slot?.stage;
+      if(!slot||!people.includes(slot.provider)||!['proposal','review','summary'].includes(slot.stage)||slot.stage==='summary'&&slot.provider!==host||slots.has(key)||!statuses.includes(slot.status))return false;
+      if(typeof slot.text!=='string'||slot.text.length>12000||slot.text.includes('\0')||slot.status==='completed'&&!slot.text.trim()||typeof slot.detail!=='string'||slot.detail.length>2000)return false;
+      if(slot.turn_id!==null&&slot.turn_id!==undefined&&(typeof slot.turn_id!=='string'||!/^[a-f0-9]{32}$/.test(slot.turn_id)))return false;
+      slots.add(key);
+    }
+    if(people.some(provider=>!slots.has(provider+':proposal')||!slots.has(provider+':review'))||!slots.has(host+':summary'))return false;
+    seen.add(meeting.id);return true;
+  });
+}
+function meetingLinkedTurnIDs(meetings){return new Set(meetings.flatMap(meeting=>meeting.slots.filter(slot=>slot.provider==='agy'&&slot.turn_id).map(slot=>slot.turn_id)));}
 function pruneConversationPages(){
   for(const key of conversationPages.keys())if(!conversationMeta(key.split(':')[0])&&!conversationRequests.has(key))conversationPages.delete(key);
   for(const key of conversationPages.keys()){if(conversationPages.size<=2)break;if(key!==pageCacheKey(activeId)&&!conversationRequests.has(key))conversationPages.delete(key);}
@@ -766,6 +789,20 @@ function loadConversationPage(id,params={},manual=false,intent=null){
       if(meta.summary){const {matchRole,...serverParams}=params;const query=new URLSearchParams({limit:String(PAGE_SIZE),...serverParams});value=await api('/api/conversations/'+id+'?'+query);}
       else value=localConversationPage(meta,params);
       if(intent!==(conversationIntents.get(key)||0))return null;
+      if(manual){delete entry.meetingHistory;delete entry.meetingRequest;entry.meetingError='';}
+      else if(entry.meetingHistory&&!params.before&&!params.after&&!params.around){
+        const history=entry.meetingHistory,fresh=new Map((value.roundtable_meetings||[]).map(item=>[item.id,item])),missing=history.meetings.filter(item=>!fresh.has(item.id)).map(item=>item.id),branch=params.branch||value.page?.branch||value.primary_branch||'main';
+        if(missing.length){
+          try{
+            const batch=await api('/api/conversations/'+id+'/meetings?'+new URLSearchParams({branch,ids:missing.join(',')}));
+            if(intent!==(conversationIntents.get(key)||0)||viewMode!=='panel'||pageCacheKey(activeId)!==key)return null;
+            const records=Array.isArray(batch?.meetings)?batch.meetings:[],valid=roundtableMeetings({codex_thread_id:meta.codex_thread_id,page:{branch},roundtable_meetings:records});
+            if(!Array.isArray(batch?.meetings)||records.length!==missing.length||valid.length!==records.length||records.some(item=>!missing.includes(item.id)))throw new Error('圆桌历史更新返回不匹配');
+            for(const item of records)fresh.set(item.id,item);entry.meetingError='';
+          }catch(error){if(intent!==(conversationIntents.get(key)||0))return null;entry.meetingError='圆桌历史暂未更新，可返回最近圆桌。';}
+        }
+        history.meetings=history.meetings.map(item=>fresh.get(item.id)||item);value.roundtable_meetings=history.meetings;
+      }
       entry.value=value;entry.tag=tag;if(manual)entry.scroll=params.around?'turn:'+params.around+':'+(params.matchRole==='user'?'user':'assistant'):params.before||params.after?'top':'bottom';
     }catch(error){if(intent===(conversationIntents.get(key)||0)){entry.error=error.message||'暂时无法载入这页对话。';entry.retryAt=Date.now()+5000;}}
     finally{entry.loading=false;conversationRequests.delete(key);pruneConversationPages();if(viewMode==='panel'&&pageCacheKey(activeId)===key&&intent===(conversationIntents.get(key)||0))render();}
@@ -787,6 +824,38 @@ function pageConversation(direction){
   const conv=active(),page=conv?.page;if(!conv||!page)return;closeImagePreview();
   const params={...(page.branch?{branch:page.branch}:{}),...(direction==='older'?{before:page.first_id}:direction==='newer'?{after:page.last_id}:{})};
   loadConversationPage(conv.id,params,true);
+}
+function meetingPagingState(conv){
+  const entry=conversationPages.get(pageCacheKey(conv?.id)),shown=roundtableMeetings(conv),history=entry?.meetingHistory,total=conv?.meeting_count??conv?.meeting_summaries?.length??shown.length;
+  const eligible=viewMode==='panel'&&!!conv?.codex_thread_id&&!conv.summary&&!entry?.params?.before&&!entry?.params?.after&&!entry?.params?.around&&shown.length>0;
+  return {entry,shown,total,history,eligible,older:eligible&&(history?history.hasOlder:total>shown.length)};
+}
+function renderMeetingPaging(conv){
+  const state=meetingPagingState(conv),bar=$('meetings-paging');if(!bar)return;
+  bar.hidden=!state.eligible||!state.older&&!state.history&&!state.entry?.meetingError;
+  $('meetings-older').hidden=!state.older;$('meetings-older').disabled=!online||!!state.entry?.meetingRequest||!!state.entry?.loading;$('meetings-older').textContent=state.entry?.meetingRequest?'载入中…':'较早圆桌';
+  $('meetings-latest').hidden=!state.history;$('meetings-latest').disabled=!online||!!state.entry?.meetingRequest||!!state.entry?.loading;
+  $('meetings-range').textContent=state.entry?.meetingError||'显示 '+state.shown.length+'/'+state.total+' 场'+(state.history?' · 历史':'');
+}
+async function loadOlderMeetings(){
+  const conv=active(),state=meetingPagingState(conv);if(!online||!state.older||state.entry?.meetingRequest||state.entry?.loading)return;
+  const cid=conv.id,thread=conv.codex_thread_id,branch=conv.page?.branch||selectedBranch(conversationMeta(cid))||conv.primary_branch||'main',key=pageCacheKey(cid),before=state.shown[0]?.id;
+  if(!before||!state.entry)return;
+  const token={},intent=conversationIntents.get(key)||0;state.entry.meetingRequest=token;state.entry.meetingError='';renderMeetingPaging(conv);
+  const current=()=>{const entry=conversationPages.get(key);return entry?.meetingRequest===token&&(conversationIntents.get(key)||0)===intent&&entry.value?.codex_thread_id===thread?entry:null;};
+  try{
+    const result=await api('/api/conversations/'+cid+'/meetings?'+new URLSearchParams({branch,before,limit:'10'}));
+    const entry=current();if(!entry||viewMode!=='panel'||activeId!==cid||pageCacheKey(activeId)!==key)return;
+    const values=Array.isArray(result?.meetings)?result.meetings:[],validated=roundtableMeetings({codex_thread_id:thread,page:{branch},roundtable_meetings:values});
+    if(!Array.isArray(result?.meetings)||validated.length!==values.length||values.length>10||typeof result.has_older!=='boolean'||!Number.isInteger(result.total)||result.total<state.shown.length||values.length&&result.first_id!==values[0].id||result.has_older&&!values.length)throw new Error('圆桌分页返回不匹配，原记录未替换。');
+    const shown=roundtableMeetings(entry.value),ids=new Set(shown.map(item=>item.id));if(values.some(item=>ids.has(item.id)))throw new Error('圆桌分页位置已变化，请回到最近圆桌。');
+    const combined=[...values,...shown].slice(0,20);entry.meetingHistory={meetings:combined,hasOlder:result.has_older};entry.value={...entry.value,roundtable_meetings:combined,meeting_count:result.total};entry.meetingError='';entry.scroll='top';
+  }catch(error){const entry=current();if(entry)entry.meetingError=error.message||'较早圆桌暂时无法载入，可再次点击重试。';}
+  finally{const entry=conversationPages.get(key);if(entry?.meetingRequest===token)delete entry.meetingRequest;if(viewMode==='panel'&&activeId===cid&&pageCacheKey(activeId)===key)render();}
+}
+function latestMeetings(){
+  const conv=active(),entry=conversationPages.get(pageCacheKey(conv?.id));if(!conv||!entry||entry.meetingRequest||entry.loading)return;
+  delete entry.meetingHistory;entry.meetingError='';return loadConversationPage(conv.id,{},true);
 }
 function resourceMemoryValue(data){
   if(data?.warning)return null;
@@ -1047,7 +1116,7 @@ async function openCollaborationAudit(){
   $('collaboration-audit-list').textContent='正在读取实际派发记录…';$('collaboration-audit-summary').textContent='';$('collaboration-audit-detail').hidden=true;$('collaboration-audit-list').hidden=false;
   $('collaboration-audit-back').hidden=true;$('collaboration-audit-dialog').showModal();await loadCollaborationAudit();
 }
-async function showCollaborationTurn(id){
+async function showCollaborationTurn(id,expectedMeeting=null){
   if(collaborationAudit.pending||!collaborationAudit.records.some(t=>t.id===id))return;
   const cid=collaborationAudit.cid,seq=++collaborationAudit.sequence;
   $('collaboration-audit-detail').hidden=false;$('collaboration-audit-list').hidden=true;$('collaboration-audit-back').hidden=false;$('collaboration-audit-detail').textContent='正在读取原始内容…';
@@ -1055,8 +1124,17 @@ async function showCollaborationTurn(id){
     const result=await api('/api/conversations/'+cid+'/turns/'+id);
     if(seq!==collaborationAudit.sequence||!$('collaboration-audit-dialog').open)return;
     const t=result.turn;
+    if(!t||t.id!==id||expectedMeeting&&(t.meeting_id!==expectedMeeting.id||t.meeting_stage!==expectedMeeting.stage||(t.branch||'main')!==expectedMeeting.branch||t.source!=='codex'))throw new Error('原始任务与当前会议不匹配，已停止显示。');
     $('collaboration-audit-detail').innerHTML=`<p class="collaboration-model">${escape(t.model)} · ${escape(texts[t.status]||t.status)} · ${escape(tokenUsageText(t))}</p>${reviewMarkup(t.review,true)}<h3>Codex 发给 Agy</h3><pre>${escape(t.prompt)}</pre><h3>Agy 原始回复</h3><pre>${escape(t.response||'尚无文字回复')}</pre>${t.images?.length?'<p>已返回 '+t.images.length+' 张图片，可在原会话查看。</p>':''}${t.error?'<details><summary>错误原文</summary><pre>'+escape(t.error)+'</pre></details>':''}${t.completion_evidence?'<details><summary>完成状态核验依据</summary><pre>'+escape(JSON.stringify(t.completion_evidence,null,2))+'</pre></details>':''}`;
   }catch(e){if(seq===collaborationAudit.sequence)$('collaboration-audit-detail').textContent=e.message;}
+}
+async function openMeetingTurn(meetingId,turnId){
+  const conv=active(),meeting=roundtableMeetings(conv).find(item=>item.id===meetingId),slot=meeting?.slots.find(item=>item.provider==='agy'&&item.turn_id===turnId);
+  if(!conv?.id||!slot||!online)return;
+  hideQuickTooltip();collaborationAudit={cid:conv.id,sequence:collaborationAudit.sequence+1,records:[{id:turnId}],before:null,hasOlder:false,scanned:1,pending:false};
+  $('collaboration-audit-list').innerHTML='<p class="collaboration-empty">本场会议的官方 CLI 原始任务与完整回复。</p><button type="button" data-collaboration-turn="'+escape(turnId)+'">查看原始任务 ↗</button>';
+  $('collaboration-audit-summary').textContent=meeting.topic;$('collaboration-audit-error').hidden=true;$('collaboration-audit-detail').hidden=true;$('collaboration-audit-list').hidden=false;$('collaboration-audit-back').hidden=true;
+  $('collaboration-audit-dialog').showModal();await showCollaborationTurn(turnId,{id:meetingId,stage:slot.stage,branch:meeting.branch});
 }
 function rememberSessionResult(cid,branch){const conv=conversationMeta(cid);if(!conv)return;conv.branches=conv.branches||{};if(!conv.branches[branch.id]){conv.branches[branch.id]=branch;if(!conv.primary_branch){conv.primary_branch=branch.id;conv.agy_id=branch.agy_id||null;}}}
 function openSessionDialog(mode='create',source=null){
@@ -1272,13 +1350,59 @@ function queueSummary(turn){
   return {running,queued:queued.length,label:index>=0?`排队第 ${index+1} 位 · ${running} 项执行中；结束后自动开始`:'等待调度'};
 }
 function providerAvatarHTML(provider){
-  const icons={codex:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 6 6 6-6 6m8 0h6"/></svg>',muse:'M',claude:'C'};
+  const icons={
+    codex:'<img src="data:image/png;base64,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" width="28" height="28" alt="" draggable="false">',
+    muse:'<img src="data:image/png;base64,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" width="28" height="28" alt="" draggable="false">',
+    claude:'C'
+  };
   return icons[provider]?`<span class="provider-avatar provider-avatar--${provider}" aria-hidden="true">${icons[provider]}</span>`:'';
 }
-function panelUserHTML(t){const codex=t.source==='codex';return `<article class="message user${codex?' codex-dispatch':''}"><div class="message-label">${codex?providerAvatarHTML('codex')+'Codex':'你'} <time>${escape(timeLabel(t.created_at))}</time></div><div class="message-body">${escape(t.prompt)}</div></article>`;}
+const expandedCodexPrompts=new Map();
+function rememberCodexPrompt(id,open){
+  if(typeof id!=='string'||!/^[a-f0-9]{32}$/.test(id))return;
+  expandedCodexPrompts.delete(id);expandedCodexPrompts.set(id,!!open);
+  while(expandedCodexPrompts.size>128)expandedCodexPrompts.delete(expandedCodexPrompts.keys().next().value);
+}
+function codexPromptHTML(turn){
+  const text=String(turn.prompt||'');
+  if(text.length<=280&&text.split('\n').length<=6)return escape(text);
+  const preview=text.split('\n').filter(line=>line.trim()).slice(0,3).join(' ').slice(0,170);
+  return `<details class="dispatch-details" data-dispatch-turn="${escape(turn.id)}"${expandedCodexPrompts.get(turn.id)?' open':''}><summary><span class="dispatch-chevron" aria-hidden="true">›</span><span class="dispatch-preview">${escape(preview)}${text.length>preview.length?'…':''}</span><span class="dispatch-expand-hint">完整指令</span></summary><div class="dispatch-full-text">${escape(text)}</div></details>`;
+}
+function panelUserHTML(t){
+  const codex=t.source==='codex';
+  return `<article class="message ${codex?'assistant codex-dispatch':'user'}"${codex?' data-provider="codex"':''}><div class="message-label">${codex?providerAvatarHTML('codex')+'Codex <span class="dispatch-turn-label">任务派发</span>':'你'} <time>${escape(timeLabel(t.created_at))}</time></div><div class="message-body">${codex?codexPromptHTML(t):escape(t.prompt)}</div></article>`;
+}
 function panelRoundtableHTML(message){
   const provider={codex:'Codex',muse:'Muse',claude:'Claude'}[message.provider],stage={proposal:'提案',review:'互评',summary:'总结'}[message.stage],source=roundtableSourceURL(message);
   return `<article class="message assistant roundtable-message" data-provider="${escape(message.provider)}"><div class="message-label">${providerAvatarHTML(message.provider)}${provider}<span class="roundtable-turn-label">圆桌 · ${message.role==='host'?'主持':'参与'} · ${stage}</span><time data-tooltip="发言同步到面板的时间">${escape(timeLabel(message.created_at))}</time></div><div class="message-body markdown">${markdown(message.text,'roundtable-'+message.id)}</div><div class="message-footer message-provenance"><span>Codex 同步</span>${source?`<a href="${escape(source)}" target="_blank" rel="noopener noreferrer">原会话 ↗</a>`:''}<button class="copy-reply" data-roundtable-reply="${escape(message.id)}">复制发言</button></div></article>`;
+}
+function meetingSlotClock(slot,now=Date.now()){
+  const read=value=>{const time=Date.parse(value);return Number.isFinite(time)?time:null;};
+  const queued=read(slot.queued_at||slot.created_at),started=read(slot.started_at),ended=read(slot.ended_at),parts=[];
+  if(queued!==null&&(slot.status==='queued'||started!==null))parts.push('排队 '+duration(Math.max(0,((started??ended??now)-queued)/1000)));
+  if(started!==null)parts.push('执行 '+duration(Math.max(0,((ended??now)-started)/1000)));
+  else if(['sending','waiting'].includes(slot.status)&&read(slot.updated_at)!==null)parts.push('已等待 '+duration(Math.max(0,(now-read(slot.updated_at))/1000)));
+  return parts.join(' · ');
+}
+function meetingSlotHTML(meeting,slot){
+  const names={codex:'Codex',agy:'Agy',muse:'Muse',claude:'Claude'},host=meeting.host||meeting.roundtable?.host,labels={pending:'待发起',sending:'发送中 · 待确认',waiting:'等待回复',queued:'排队中',running:'执行中',cancelling:'正在停止',completed:'已回复',failed:'未完成',unavailable:'暂不可用',cancelled:'已取消',interrupted:'结果待核对'};
+  const source=roundtableSourceURL(slot),clock=meetingSlotClock(slot),prefix='meeting-'+meeting.id+'-'+slot.provider+'-'+slot.stage;
+  const body=slot.text?`<div class="meeting-slot-text markdown">${markdown(slot.text,prefix)}</div>`:'',detail=slot.detail||(slot.status==='sending'?'发送结果待核对；请打开原会话确认，暂勿重复发送。':'');
+  return `<section class="meeting-slot meeting-slot--${escape(slot.status)}" data-meeting-provider="${escape(slot.provider)}" data-meeting-stage="${escape(slot.stage)}"><div class="meeting-slot-heading">${slot.provider==='agy'?'<img class="meeting-avatar" src="/icon.svg" alt="">':providerAvatarHTML(slot.provider)}<strong>${names[slot.provider]}</strong>${slot.provider===host?'<small class="meeting-host-label">主持</small>':''}<span class="meeting-slot-state">${labels[slot.status]}</span></div>${body}${detail?`<p class="meeting-slot-detail">${escape(detail)}</p>`:''}<div class="meeting-slot-meta"><span>${slot.provider==='agy'&&slot.turn_id?'官方 CLI 记录':slot.text?'Codex 已同步真实发言':slot.status==='pending'?'等待当前 Codex 组织':''}</span>${clock?`<time>${escape(clock)}</time>`:''}${source?`<a href="${escape(source)}" target="_blank" rel="noopener noreferrer">原会话 ↗</a>`:''}${slot.provider==='agy'&&slot.turn_id?`<button type="button" class="copy-reply" data-meeting-original="${escape(meeting.id)}" data-meeting-turn="${escape(slot.turn_id)}">原始任务 ↗</button>`:''}${slot.text?`<button type="button" class="copy-reply" data-meeting-copy="${escape(meeting.id)}" data-meeting-provider="${escape(slot.provider)}" data-meeting-stage="${escape(slot.stage)}">复制发言</button>`:''}</div></section>`;
+}
+function meetingProgressNote(meeting){
+  if(meeting.status!=='active')return '';
+  const stage=meeting.phase,slots=meeting.slots.filter(slot=>slot.stage===stage),count=slots.filter(slot=>slot.status==='completed').length;
+  if(['proposal','review'].includes(stage)&&count<slots.length)return (stage==='proposal'?'提案':'互评')+'已收 '+count+'/'+slots.length+' 位 · 仅代表已发言方';
+  return stage==='summary'?'两轮已结束，等待主持总结':'';
+}
+function meetingPartialDetail(meeting){
+  return [['unavailable','缺席'],['failed','失败'],['cancelled','取消'],['interrupted','待核对']].map(([status,label])=>{const count=meeting.slots.filter(slot=>slot.status===status).length;return count?label+' '+count+' 项':'';}).filter(Boolean).join(' · ');
+}
+function panelMeetingHTML(meeting){
+  const host=meeting.host||meeting.roundtable?.host,names={codex:'Codex',agy:'Agy',muse:'Muse',claude:'Claude'},states={active:'进行中',completed:'已完成',partial:'部分完成',cancelled:'已取消'},phases={proposal:'第一轮提案',review:'第二轮互评',summary:'主持总结',finished:'本场已结束'},stages=[['proposal','01','独立提案'],['review','02','互评'],['summary','03','主持总结']];
+  return `<article class="message meeting-card" data-meeting-id="${escape(meeting.id)}"><header class="meeting-heading"><div><span class="meeting-eyebrow">圆桌会议 · 主持 ${names[host]}</span><h2>${escape(meeting.topic)}</h2></div><span class="meeting-state meeting-state--${escape(meeting.status)}">${states[meeting.status]}</span></header><div class="meeting-overview"><span>${meeting.participants.map(p=>names[p]).join(' · ')}</span><span>${phases[meeting.phase]||'阶段待核对'}</span><time>${escape(timeLabel(meeting.created_at))}</time></div>${meetingProgressNote(meeting)?`<p class="meeting-progress-note">${escape(meetingProgressNote(meeting))}</p>`:''}${stages.map(([stage,number,label],index)=>{const slots=meeting.slots.filter(slot=>slot.stage===stage),future=index>stages.findIndex(row=>row[0]===meeting.phase)&&slots.every(slot=>slot.status==='pending'),replied=slots.filter(slot=>slot.status==='completed').length;return `<section class="meeting-round${future?' meeting-round--future':''}"${future?' aria-label="'+label+'，等待前一阶段结束"':''}><h3><span>${number}</span>${label}<small>${future?'待发起 · 前序结束后进行':replied+'/'+slots.length+' 已回复'}</small></h3>${future?'':`<div class="meeting-round-slots">${slots.map(slot=>meetingSlotHTML(meeting,slot)).join('')}</div>`}</section>`;}).join('')}<footer class="meeting-footer">${meeting.status==='completed'?'各方两轮回复和主持总结已记录':meeting.status==='partial'?(meetingPartialDetail(meeting)||'含未完成')+'；以实际已收到的发言为准':meeting.status==='cancelled'?'本场已取消，已有发言保留':'尚在组织中；开关与待发起状态不代表已调用'} · 记录 #${escape(meeting.id.slice(0,8))}</footer></article>`;
 }
 const expandedTaskProgress=new Map();
 function rememberProgressExpansion(id,open){
@@ -1358,7 +1482,7 @@ function render(){
   const health=snapshot.health,conv=viewMode==='panel'?active():null;
   if($('fulltext-open'))$('fulltext-open').disabled=!online||!snapshot.service?.features?.history_search;
   document.title=(conv?.title||(viewMode==='external'?externalTitle(externalDetail?.session||{id:externalId,title:'Agy 会话'}):viewMode==='activity'?'全局活动':'研究工作台'))+' · Antigravity';
-  document.body.classList.toggle('welcome-view',viewMode==='home'||(viewMode==='panel'&&!conv?.turns.length));
+  document.body.classList.toggle('welcome-view',viewMode==='home'||(viewMode==='panel'&&!conv?.turns.length&&!roundtableMeetings(conv).length&&!conv?.meeting_summaries?.length));
   renderAccount();
   $('connection').className='connection '+(!online?'disconnected':health.checking?'checking':health.connected?'':'disconnected');
   $('connection').querySelector('span').textContent=!online?'服务已断开':health.checking?'检查 CLI…':health.connected?'CLI 已就绪':'CLI 待检查';
@@ -1379,7 +1503,7 @@ function render(){
   $('activity-count').textContent=String(activityCount);$('activity-nav').dataset.tooltip=`全局 CLI 活动 · ${activityCount} 个活动会话`;
   $('activity-nav').classList.toggle('active',viewMode==='activity');
   $('home-link').setAttribute('aria-current',viewMode==='home'?'page':'false');
-  if(viewMode!=='panel'){$('turns-paging').hidden=true;$('detail-error').hidden=true;}$('activity-overview').hidden=viewMode!=='activity';$('external-banner').hidden=viewMode!=='external';
+  if(viewMode!=='panel'){$('meetings-paging').hidden=true;$('turns-paging').hidden=true;$('detail-error').hidden=true;}$('activity-overview').hidden=viewMode!=='activity';$('external-banner').hidden=viewMode!=='external';
   if(viewMode!=='external')externalDetail=null;
   if(viewMode!=='activity'&&$('activity-overview').childElementCount){$('activity-overview').replaceChildren();activityFingerprint='';}
   renderComposer(composerConversation(),health);
@@ -1390,14 +1514,17 @@ function render(){
   $('conversation-title').textContent=conv?.title||'研究工作台';
   $('conversation-subtitle').textContent=conv?.codex_thread_id?'已绑定 Codex · '+collaborationStateText(conversationMeta(conv.id)):conv?.turns.length?`${turnCount(conv)} 轮对话 · 继续追问会保留上下文`:'任务、进度和结果，都在这里';
   $('export').disabled=!conv?.turns.length;
-  $('empty').hidden=!!conv?.turns.length;$('messages').hidden=!conv?.turns.length;
-  renderPaging(conv);
+  const hasTranscript=!!conv?.turns.length||roundtableMeetings(conv).length>0||!!conv?.meeting_summaries?.length;$('empty').hidden=hasTranscript;$('messages').hidden=!hasTranscript;
+  renderPaging(conv);renderMeetingPaging(conv);
   if(conv?.summary){syncMessageRows('loading:'+conv.id,[{key:'loading',signature:'loading',html:()=>'<p class="activity-empty">正在载入最近 20 轮对话…</p>'}]);return;}
-  const rows=[],speeches=conv?.turns?.length?roundtableMessages(conv):[];for(const t of conv?.turns||[]){
-    rows.push({key:t.id+':user',signature:JSON.stringify([t.prompt,t.created_at,t.source]),html:()=>panelUserHTML(t)});
-    rows.push({key:t.id+':assistant',codePrefix:t.id,signature:JSON.stringify([t.response,t.status,t.error,t.model,t.elapsed,t.usage,t.usage_scope,t.images,t.completion_evidence,t.failure_evidence,t.compaction_evidence,t.action,t.recovery_of,t.review,t.progress,t.progress_updated_at,t.progress_omitted,t.events,t.model_changes,t.fallback_notice,t.attempts,t.roundtable,t.roundtable_role,conversationMeta(conv.id)?.branches?.[t.branch]?.last_turn_id]),html:()=>panelAssistantHTML(t)});
-    for(const message of speeches)if(message.anchor_turn_id===t.id)rows.push({key:'roundtable:'+message.id,codePrefix:'roundtable-'+message.id,signature:JSON.stringify(message),html:()=>panelRoundtableHTML(message)});
+  const rows=[],speeches=conv?.turns?.length?roundtableMessages(conv):[],meetings=Array.isArray(conv?.roundtable_meetings)?roundtableMeetings(conv):[],meetingTurns=meetings.length?meetingLinkedTurnIDs(meetings):new Set();for(const t of conv?.turns||[]){
+    const grouped=t.meeting_id&&meetingTurns.has(t.id)&&meetings.some(meeting=>meeting.id===t.meeting_id&&meeting.slots.some(slot=>slot.provider==='agy'&&slot.turn_id===t.id));
+    if(!grouped){rows.push({key:t.id+':user',timelineAt:t.created_at,signature:JSON.stringify([t.prompt,t.created_at,t.source]),html:()=>panelUserHTML(t)});
+    rows.push({key:t.id+':assistant',timelineAt:t.created_at,codePrefix:t.id,signature:JSON.stringify([t.response,t.status,t.error,t.model,t.elapsed,t.usage,t.usage_scope,t.images,t.completion_evidence,t.failure_evidence,t.compaction_evidence,t.action,t.recovery_of,t.review,t.progress,t.progress_updated_at,t.progress_omitted,t.events,t.model_changes,t.fallback_notice,t.attempts,t.roundtable,t.roundtable_role,conversationMeta(conv.id)?.branches?.[t.branch]?.last_turn_id]),html:()=>panelAssistantHTML(t)});}
+    for(const message of speeches)if(message.anchor_turn_id===t.id)rows.push({key:'roundtable:'+message.id,timelineAt:t.created_at,codePrefix:'roundtable-'+message.id,signature:JSON.stringify(message),html:()=>panelRoundtableHTML(message)});
   }
+  for(const meeting of meetings)rows.push({key:'meeting:'+meeting.id,timelineAt:meeting.created_at,codePrefix:'meeting-'+meeting.id,signature:JSON.stringify(meeting),html:()=>panelMeetingHTML(meeting)});
+  if(meetings.length)rows.sort((a,b)=>Date.parse(a.timelineAt)-Date.parse(b.timelineAt));
   const changed=syncMessageRows('panel:'+conv?.id,rows);lastRender='panel:'+conv?.id;
   const entry=conversationPages.get(pageCacheKey(conv?.id)),scroll=entry?.scroll;if(entry)entry.scroll=null;
   if(scroll?.startsWith('turn:')){
@@ -1594,6 +1721,8 @@ $('session-dialog-form').addEventListener('submit',async event=>{
 $('related-dialog-close').addEventListener('click',()=>$('related-dialog').close());
 $('related-dialog').addEventListener('close',()=>{relatedRequest++;$('related-messages').replaceChildren();clearCodePrefix('related');});
 $('related-messages').addEventListener('click',async event=>{const button=event.target.closest('[data-code]');if(button){try{await navigator.clipboard.writeText(codeCopies.get(button.dataset.code)||'');toast('已复制');}catch(e){toast('复制不可用，请手动选择。');}}});
+$('meetings-older').addEventListener('click',loadOlderMeetings);
+$('meetings-latest').addEventListener('click',latestMeetings);
 $('turns-older').addEventListener('click',()=>pageConversation('older'));
 $('turns-newer').addEventListener('click',()=>pageConversation('newer'));
 $('turns-latest').addEventListener('click',()=>pageConversation('latest'));
@@ -1666,8 +1795,9 @@ $('export').addEventListener('click',()=>{if(active())window.location.href=`/api
 document.addEventListener('keydown',event=>{if(['panel-action-dialog','fulltext-dialog','backup-dialog','software-update-dialog','config-import-dialog'].some(id=>$(id)?.open)||openSelectId||$('bulk-dialog').open||$('session-dialog').open||$('related-dialog').open||$('collaboration-audit-dialog').open||$('task-queue-dialog').open||$('settings-dialog').open)return;if($('image-preview').open){if(event.key==='Escape'){event.preventDefault();closeImagePreview();}return;}if($('history-dialog').open)return;if(resourceExpanded&&event.key==='Escape'){event.preventDefault();closeResources(true);return;}if(accountExpanded&&event.key==='Escape'){event.preventDefault();accountExpanded=false;renderAccount();$(accountAnchor==='composer'?'quota-ring':'account-toggle').focus();return;}if(!$('history-menu').hidden){if(event.key==='Escape'){event.preventDefault();closeHistoryMenu();return;}if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();const buttons=[...$('history-menu').querySelectorAll('button:not([hidden]):not(:disabled)')],index=buttons.indexOf(document.activeElement);buttons[event.key==='Home'?0:event.key==='End'?buttons.length-1:(index+(event.key==='ArrowDown'?1:buttons.length-1))%buttons.length]?.focus();return;}}if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='k'){event.preventDefault();newConversation();}if(event.key==='Escape')setSidebarOpen(false);});
 const templates={review:'请审查以下研究方案，按「关键问题、依据、修改建议」给出意见。区分事实与假设，不编造参考文献。\n\n[在这里粘贴研究方案]',writing:'请润色下面的论文段落，保留原意和所有数据，不补造结果与引用。先给修改稿，再说明主要修改。\n\n[在这里粘贴论文段落]',code:'请审查下面的统计代码，重点检查分析单位、缺失值处理、数据泄漏和结果解释。指出具体位置并给出修正建议。\n\n[在这里粘贴代码]',image:'请生成一张图片，按以下要求返回实际图片文件。\n\n主题：[填写图片内容]\n风格：[如简洁示意图、插画、写实]\n用途：[如论文配图、演示文稿]\n比例：[如 1:1、16:9]'};
 document.querySelectorAll('[data-template]').forEach(button=>button.addEventListener('click',()=>{$('task-kind').value=button.dataset.template==='image'?'image':'text';updateTaskMode();$('prompt').value=templates[button.dataset.template];$('prompt').dispatchEvent(new Event('input'));render();$('prompt').focus();}));
-$('messages').addEventListener('toggle',event=>{const details=event.target;if(details.matches?.('details[data-progress-turn]')&&details.isConnected)rememberProgressExpansion(details.dataset.progressTurn,details.open);},true);
-$('messages').addEventListener('click',async event=>{let button=event.target.closest('[data-code],[data-reply],[data-roundtable-reply]');if(!button)return;let text=button.dataset.code?codeCopies.get(button.dataset.code):button.dataset.roundtableReply?roundtableMessages(active()).find(message=>message.id===button.dataset.roundtableReply)?.text:active()?.turns.find(t=>t.id===button.dataset.reply)?.response;try{await navigator.clipboard.writeText(text||'');toast('已复制');}catch(e){toast('复制不可用，请选择文本手动复制。');}});
+$('messages').addEventListener('toggle',event=>{const details=event.target;if(details.matches?.('details[data-progress-turn]')&&details.isConnected)rememberProgressExpansion(details.dataset.progressTurn,details.open);if(details.matches?.('details[data-dispatch-turn]')&&details.isConnected)rememberCodexPrompt(details.dataset.dispatchTurn,details.open);},true);
+$('messages').addEventListener('click',async event=>{let button=event.target.closest('[data-code],[data-reply],[data-roundtable-reply],[data-meeting-copy]');if(!button)return;const meeting=button.dataset.meetingCopy?roundtableMeetings(active()).find(item=>item.id===button.dataset.meetingCopy):null;let text=button.dataset.code?codeCopies.get(button.dataset.code):meeting?meeting.slots.find(slot=>slot.provider===button.dataset.meetingProvider&&slot.stage===button.dataset.meetingStage)?.text:button.dataset.roundtableReply?roundtableMessages(active()).find(message=>message.id===button.dataset.roundtableReply)?.text:active()?.turns.find(t=>t.id===button.dataset.reply)?.response;try{await navigator.clipboard.writeText(text||'');toast('已复制');}catch(e){toast('复制不可用，请选择文本手动复制。');}});
+$('messages').addEventListener('click',event=>{const button=event.target.closest('[data-meeting-original][data-meeting-turn]');if(button)openMeetingTurn(button.dataset.meetingOriginal,button.dataset.meetingTurn);});
 $('messages').addEventListener('click',event=>{const button=event.target.closest('[data-image][data-image-turn]');if(button)showImagePreview(button.dataset.imageTurn,button.dataset.image);});
 $('messages').addEventListener('error',event=>{if(event.target.tagName!=='IMG'||!event.target.closest('.image-card'))return;const button=event.target.closest('.image-open');event.target.hidden=true;button.disabled=true;button.querySelector('.image-open-hint').textContent='图片暂无法加载，请检查服务连接。';button.querySelector('.image-open-hint').className='image-load-failure';},true);
 $('preview-close').addEventListener('click',closeImagePreview);

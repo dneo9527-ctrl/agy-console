@@ -1,10 +1,10 @@
-> **0.1.0-preview.13 开发者预览候选。** 完整包内含 Agy 配套 Skill 和 external-ai-team preview.3；从旧 .8 首次升级需完整包。发布状态和准确验证记录以对应 Release 为准。
+> **0.1.0-preview.15 开发者预览候选。** 完整包内含 Agy 配套 Skill 和 external-ai-team preview.4；从旧 .8 首次升级需完整包。发布状态和准确验证记录以对应 Release 为准。
 
 # Agy Console · Codex × Antigravity 联动面板
 
 本机网页控制台：通过官方 Antigravity CLI 派发任务、续接会话、查看进度，并让每个 Codex 聊天保留自己的固定协作入口。
 
-**v0.1.0-preview.13 · macOS / Windows / Linux 开发者预览 · MIT**
+**v0.1.0-preview.15 · macOS / Windows / Linux 开发者预览 · MIT**
 
 - **连续协作**：固定聊天绑定、工作会话、任务队列与采纳记录；简短状态不会冒充模型完成。
 - **模型与候补**：文字、生图分别选择模型和档位；按保存顺序处理明确的额度耗尽。
@@ -14,15 +14,15 @@
 
 ## 下载与启动
 
-[下载 v0.1.0-preview.13](https://github.com/dneo9527-ctrl/agy-console/releases/tag/v0.1.0-preview.13) · [测试与构建](https://github.com/dneo9527-ctrl/agy-console/actions/workflows/checks.yml)
+[下载 v0.1.0-preview.15](https://github.com/dneo9527-ctrl/agy-console/releases/tag/v0.1.0-preview.15) · [测试与构建](https://github.com/dneo9527-ctrl/agy-console/actions/workflows/checks.yml)
 
 Windows 普通用户选择完整安装向导，已安装用户关闭本工具后运行完整安装包升级；Mac/Linux 提供需 Python 的完整源码预览。旧 `.8` bootstrap 不接受新增模块，本版默认不发 program.zip 或自动更新清单；Mac/Linux 首次升级按 [完整升级说明](docs/INSTALL.md) 保留数据后使用完整目录。
 
 | 平台 | 安装包 | 要求与验证范围 |
 | --- | --- | --- |
-| macOS | [Mac 源码预览](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.13/AgyConsole-0.1.0-preview.13-macos-source-preview.zip) | Python 3.9+；arm64 本机回归通过，Intel/旧系统未实机验证；无 Developer ID/公证 |
-| Windows | [Windows x64 安装向导](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.13/AgyConsole-0.1.0-preview.13-windows-x64-setup.exe) · [完整便携包](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.13/AgyConsole-0.1.0-preview.13-windows-x64-preview.zip) | 内置 Python 3.13.17；Windows 10 1809+/11 x64 目标；无发布者代码签名；原生 CI 与真实登录分开记录 |
-| Linux | [Linux 源码预览](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.13/AgyConsole-0.1.0-preview.13-linux-source-preview.zip) | Python 3.9+；x64/arm64 为源码预览，原生验收待 CI/实机记录 |
+| macOS | [Mac 源码预览](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.15/AgyConsole-0.1.0-preview.15-macos-source-preview.zip) | Python 3.9+；arm64 本机回归通过，Intel/旧系统未实机验证；无 Developer ID/公证 |
+| Windows | [Windows x64 安装向导](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.15/AgyConsole-0.1.0-preview.15-windows-x64-setup.exe) · [完整便携包](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.15/AgyConsole-0.1.0-preview.15-windows-x64-preview.zip) | 内置 Python 3.13.17；Windows 10 1809+/11 x64 目标；无发布者代码签名；原生 CI 与真实登录分开记录 |
+| Linux | [Linux 源码预览](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.15/AgyConsole-0.1.0-preview.15-linux-source-preview.zip) | Python 3.9+；x64/arm64 为源码预览，原生验收待 CI/实机记录 |
 
 1. 安装并登录 [官方 Antigravity CLI](https://antigravity.google/docs/install?tab=cli)，无需为每个聊天重复登录。
 2. 完整解压到可写目录。Mac 双击 `启动控制台.command`；Linux 在终端执行 `./Start-Agy.sh`；Windows 用 `Start-Agy.cmd`。
@@ -33,14 +33,14 @@ Windows 安装向导创建桌面/开始菜单入口，首次指南提供官方 C
 
 端口被占用时拒绝重复启动。聊天和设置保存在自己的 `data` 中；首次启动不导入旧工程历史。详见 [安装与更新](docs/INSTALL.md)。
 
-## v0.1.0-preview.13
+## v0.1.0-preview.15
 
-- 每聊天独立保存总控及 Agy／Muse／Claude 提供方选择；总暂停和单方关闭各自保留。受控前台启动需明确有效入口、允许开关和本机健康检查，不默认打开。
-- 圆桌主持、两轮计划和角色快照可保存；Codex 指令有独立标识，实际观察到的 Muse／Claude 发言和总结可同步到同一聊天流并保留原链接。
-- 紧凑聊天布局及白色主题改善小窗口空间；设置、草稿、窗口模型、官方会话和自动打开偏好独立保存。
-- Mac 内含已隔离验证的 [Bark 完成／最终失败接口](docs/BARK.md)。接收端正在纠正 Antigravity.app 接入范围，Build 51 暂停发行，当前不作为已开放的手机提醒功能；不影响面板及配套 Skill 的独立完整安装。
+- 独立圆桌会议保存准确聊天、工作会话、主持与参与方；按提案、互评、主持总结展示真实进度，缺席或失败明确列出。
+- Muse/Claude 的真实网页贡献无需等待 Agy 成功；Agy 槽位关联实际官方任务，排队与执行耗时分开，来源标识防止重复记录和重复派发。
+- 暂停阻止后续新阶段，已发任务仍可收取结果；会议、草稿、窗口模型和官方会话在刷新、重启与备份恢复后保留。
+- 内置严格对应的 `external-ai-team` preview.4 九文件 Skill，在明确圆桌模式下指导活跃 Codex 组织两轮协作，默认 assist 保留单提供方方式。安装步骤见 [配套 Skill](docs/CODEX-SKILL.md)。
 
-**当前 Skill 没有自动跨网页圆桌调度、后台网页采集或闲置唤醒。** 记录同步只接受活跃 Codex 实际观察到的发言，当前需要一个真实完成的 Agy 圆桌轮次作为锚点；开关不会自动开会。完整八文件 external-ai-team 的显式安装见 [配套 Skill](docs/CODEX-SKILL.md)。
+圆桌需要可用的项目网页、官方 CLI 与宿主浏览器工具。Skill 在活跃 Codex 回合内组织工作；开关不会唤醒闲置聊天，也没有后台网页采集。Windows/Linux 真实登录与模型调用、所有旧窗口自动加载仍未验收。可选 Bark Console 接口的范围见 [Bark 说明](docs/BARK.md)。
 
 ## v0.1.0-preview.8 历史功能
 
@@ -56,7 +56,7 @@ Windows 安装向导创建桌面/开始菜单入口，首次指南提供官方 C
 
 ## 与 Codex 连接
 
-完整包内附 `agy-console` Skill 和安装入口；无需自行编写协作指令。安装入口会保留原规则，添加可移除的默认协作段。仅按需使用可不启用默认协作，详见 [Skill 说明](docs/CODEX-SKILL.md)。已有面板可[单独下载 Skill 包](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.13/AgyConsole-0.1.0-preview.13-codex-skill.zip)。
+完整包内附 `agy-console` Skill 和安装入口；无需自行编写协作指令。安装入口会保留原规则，添加可移除的默认协作段。仅按需使用可不启用默认协作，详见 [Skill 说明](docs/CODEX-SKILL.md)。已有面板可[单独下载 Skill 包](https://github.com/dneo9527-ctrl/agy-console/releases/download/v0.1.0-preview.15/AgyConsole-0.1.0-preview.15-codex-skill.zip)。
 
 手动调试连接时，先启动面板，再在当前 Codex 聊天环境运行（路径改为实际位置）：
 
@@ -69,7 +69,7 @@ Windows 使用包内 `runtime/python.exe` 与 `app/bridge.py`。`CODEX_THREAD_ID
 
 ## 验证与边界
 
-本版开发交接的完整冻结包为 191 个文件，348 项 Python、33 组 JS、7 项发行框架检查通过；发布候选另内置准确八文件 external-ai-team，并对最终提交执行多平台 CI。最终结果见对应 Release 与 Actions 记录。Windows 原生、Linux 原生、公开附件更新与下载后首次打开分别记录，不能用 Mac 的测试结果代替。[验证详情](docs/VERIFICATION.md)
+本版开发交接为 197 个冻结源文件，开发者报告 394 项 Python、34 组 JS 及一次 Mac 两轮圆桌现场验收；发布方另保留公开版修正、整合九文件 Skill，并对最终提交执行独立回归、四平台 CI、完整安装包与下载检查。最终结果见对应 Release 与 Actions 记录。Windows 原生、Linux 原生、公开附件更新与下载后首次打开分别记录，不能用 Mac 的测试结果代替。[验证详情](docs/VERIFICATION.md)
 
 仅绑定本机回环地址，适用于受信本机环境；不是多用户认证服务。聊天内容会按任务经官方 CLI 发给相应服务商。备份含私人历史，不应上传到仓库或 Issue。[隐私说明](docs/PRIVACY.md)
 

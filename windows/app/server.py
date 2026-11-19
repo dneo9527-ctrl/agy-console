@@ -50,7 +50,9 @@ from multi_ai_collaboration import (Coordination, default_policy_path, launcher_
                                     allowed as collaboration_allowed, patch as patch_collaboration,
                                     validate as validate_collaboration, roundtable as roundtable_policy,
                                     validate_roundtable, patch_roundtable, roundtable_plan, roundtable_prompt,
-                                    roundtable_message_request, validate_roundtable_messages)
+                                    roundtable_message_request, validate_roundtable_messages,
+                                    new_meeting, validate_meetings, record_meeting_event,
+                                    link_meeting_turn, meeting_view, meeting_summary)
 
 ROOT = Path(__file__).resolve().parent
 APP_VERSION = (ROOT / 'VERSION').read_text(encoding='utf-8').strip()
@@ -523,8 +525,20 @@ class Console:
             self._touch(conv)
             raise
 
-    def conversation_metadata(self, conv):
-        value = copy.deepcopy(conv)
+    def conversation_metadata(self, conv, include_meetings=True, compact=False):
+        omitted = {'roundtable_meetings'} | ({'turns', 'roundtable_messages'} if compact else set())
+        value = copy.deepcopy({k: v for k, v in conv.items() if k not in omitted})
+        if include_meetings:
+            try:
+                records = validate_meetings(conv)
+                if compact:
+                    value['meeting_summaries'] = [meeting_summary(meeting_view(conv, item)) for item in records]
+                else:
+                    views = [meeting_view(conv, item) for item in records]
+                    value['roundtable_meetings'] = views
+                    value['meeting_summaries'] = [meeting_summary(item) for item in views]
+            except ValueError:
+                value.update(roundtable_meetings=[], meeting_summaries=[], meeting_error='圆桌记录待核对；原数据已保留。')
         if value.get('codex_thread_id'):
             migrate_collaboration(value)
             value.setdefault('auto_start_console', False)
@@ -628,6 +642,117 @@ class Console:
                 self._touch(conv)
                 raise
             return {'recorded': True, 'message': copy.deepcopy(record), 'duplicate': False}
+
+    def meeting_records(self, cid, mid=None, branch=None, before=None, limit=10, ids=None):
+        """Independent transcript reads; no provider call or implicit binding."""
+        with self.lock:
+            conv = self.conversation(cid)
+            if not conv or not conv.get('codex_thread_id'):
+                raise KeyError('固定聊天不存在。')
+            records = validate_meetings(conv)
+            if type(limit) is not int or not 1 <= limit <= 20:
+                raise ValueError('圆桌分页数量需为 1–20。')
+            if branch is not None and branch not in conv.get('branches', {}):
+                raise ValueError('工作会话不存在。')
+            if ids is not None:
+                if (mid is not None or before is not None or not isinstance(ids, list) or not 1 <= len(ids) <= 20
+                        or any(not isinstance(ident, str) or not re.fullmatch(r'[a-f0-9]{32}', ident) for ident in ids)
+                        or len(set(ids)) != len(ids)):
+                    raise ValueError('请选择当前工作会话中最多 20 场不同圆桌。')
+                selected = {item['id']: item for item in records if branch is None or item['branch'] == branch}
+                if any(ident not in selected for ident in ids):
+                    raise KeyError('圆桌记录不属于当前工作会话。')
+                return {'meetings': [meeting_view(conv, selected[ident]) for ident in ids]}
+            if mid is not None:
+                record = next((item for item in records if item['id'] == mid), None)
+                if record is None or branch is not None and record['branch'] != branch:
+                    raise KeyError('本聊天没有这场圆桌。')
+                return meeting_view(conv, record)
+            chosen = [item for item in records if branch is None or item['branch'] == branch]
+            end = len(chosen)
+            if before is not None:
+                end = next((i for i, item in enumerate(chosen) if item['id'] == before), None)
+                if end is None:
+                    raise KeyError('圆桌分页位置不属于当前工作会话。')
+            start = max(0, end - limit)
+            page = chosen[start:end]
+            return {'meetings': [meeting_view(conv, item) for item in page],
+                    'total': len(chosen), 'has_older': start > 0,
+                    'first_id': page[0]['id'] if page else None,
+                    'last_id': page[-1]['id'] if page else None}
+
+    def persist_meetings(self, conv, records, stamp):
+        """Content-only transaction; policy mirror and credentials are untouched."""
+        candidate = dict(conv, roundtable_meetings=records)
+        validate_meetings(candidate)
+        existed, previous = 'roundtable_meetings' in conv, conv.get('roundtable_meetings')
+        old_updated = conv.get('updated_at')
+        conv.update(roundtable_meetings=records, updated_at=stamp)
+        try:
+            write_json(self.file, self.state)
+            self._touch(conv)
+        except Exception:
+            if existed:
+                conv['roundtable_meetings'] = previous
+            else:
+                conv.pop('roundtable_meetings', None)
+            conv['updated_at'] = old_updated
+            try:
+                write_json(self.file, self.state)
+            except Exception:
+                pass
+            self._touch(conv)
+            raise
+
+    def create_meeting(self, cid, body):
+        with self.lock:
+            if self.stopping or self.maintenance:
+                raise ConflictError('服务暂时不能创建圆桌。')
+            conv = self.conversation(cid)
+            if not conv or not conv.get('codex_thread_id'):
+                raise ValueError('请进入当前 Codex 固定聊天。')
+            records = validate_meetings(conv)
+            candidate = conv
+            if not conv.get('branches') and isinstance(body, dict) and body.get('branch', 'main') == 'main':
+                # A Muse-only first meeting needs a display lane, not a dummy
+                # CLI request or an invented official conversation.
+                candidate = dict(conv, branches={})
+                branch_for(candidate, 'main', create=True)
+            # Validate input even on idempotent delivery; never accept another
+            # thread's source ID or silently replace a topic or participant set.
+            record = new_meeting(candidate, body, uuid.uuid4().hex, now())
+            existing = next((m for m in records if m['source_id'] == record['source_id']), None)
+            if existing:
+                if any(existing[k] != record[k] for k in ('topic', 'branch', 'codex_thread_id')):
+                    raise ConflictError('同一来源已有不同圆桌，原会议已保留。')
+                return {'meeting': meeting_view(conv, existing), 'duplicate': True, 'model_started': False}
+            old_lane = {key: conv.get(key) for key in ('branches', 'primary_branch')}
+            if candidate is not conv:
+                conv.update(branches=candidate['branches'], primary_branch=candidate['primary_branch'])
+            try:
+                self.persist_meetings(conv, records + [record], record['created_at'])
+            except Exception:
+                if candidate is not conv:
+                    conv.update(old_lane)
+                    try:
+                        write_json(self.file, self.state)
+                    except Exception:
+                        pass
+                raise
+            return {'meeting': meeting_view(conv, record), 'duplicate': False, 'model_started': False}
+
+    def record_meeting_event(self, cid, mid, body):
+        with self.lock:
+            if self.stopping or self.maintenance:
+                raise ConflictError('服务暂时不能保存圆桌发言。')
+            conv = self.conversation(cid)
+            if not conv or not conv.get('codex_thread_id'):
+                raise ValueError('请进入当前 Codex 固定聊天。')
+            records = validate_meetings(conv)
+            updated, duplicate = record_meeting_event(conv, mid, body, now())
+            if not duplicate:
+                self.persist_meetings(conv, [updated if m['id'] == mid else m for m in records], updated['updated_at'])
+            return {'recorded': True, 'duplicate': duplicate, 'meeting': meeting_view(conv, updated), 'model_started': False}
 
     def console_startup_info(self):
         return self.coordination.metadata()
@@ -1094,16 +1219,17 @@ class Console:
     def snapshot(self, summaries=False):
         with self.lock:
             policy, images = self.policy_snapshot(), self.verified_image_models()
-            conversations = [dict(self.conversation_metadata(c), model_resolution=self.model_resolution(c, policy, images))
+            conversations = [dict(self.conversation_metadata(c, compact=summaries), model_resolution=self.model_resolution(c, policy, images))
                              for c in self.state['conversations'] if not c.get('deleted_at')]
             if summaries:
                 compact = []
                 fields = ('model_changes', 'fallback_notice', 'requested_model', 'fallback_enabled', 'id', 'status', 'kind', 'branch', 'model', 'created_at', 'started_at', 'elapsed', 'events',
-                          'progress', 'progress_updated_at', 'progress_omitted', 'roundtable', 'roundtable_role')
+                          'progress', 'progress_updated_at', 'progress_omitted', 'roundtable', 'roundtable_role', 'meeting_id', 'meeting_stage')
                 for conv in conversations:
-                    item = {k: v for k, v in conv.items() if k not in ('turns', 'roundtable_messages')}
-                    turns = conv['turns']
-                    item.update(summary=True, roundtable_message_count=len(conv.get('roundtable_messages', [])), collaboration_state=self.collaboration_state(conv), turn_count=len(turns), branches=session_summaries(conv), revision=self.instance_id + ':' + str(self.conversation_revisions.get(conv['id'], 0)),
+                    raw = self.conversation(conv['id'])
+                    item = {k: v for k, v in conv.items() if k not in ('turns', 'roundtable_messages', 'roundtable_meetings')}
+                    turns = raw['turns']
+                    item.update(summary=True, roundtable_message_count=len(raw.get('roundtable_messages', [])), collaboration_state=self.collaboration_state(raw), turn_count=len(turns), branches=session_summaries(raw), revision=self.instance_id + ':' + str(self.conversation_revisions.get(conv['id'], 0)),
                                 turns=[{k: t.get(k) for k in fields} for i, t in enumerate(turns)
                                        if t['status'] in BUSY or i == len(turns) - 1])
                     compact.append(item)
@@ -1146,8 +1272,18 @@ class Console:
                 start = index + 1; end = min(total, start + limit)
             else:
                 end = total; start = max(0, end - limit)
-            value = {k: v for k, v in conv.items() if k not in ('turns', 'roundtable_messages')}
-            value = self.conversation_metadata(value)
+            value = {k: v for k, v in conv.items() if k not in ('turns', 'roundtable_messages', 'roundtable_meetings')}
+            value = self.conversation_metadata(value, include_meetings=False)
+            try:
+                records = validate_meetings(conv)
+                scoped_meetings = [m for m in records if branch is None or m['branch'] == branch]
+                views = [meeting_view(conv, m) for m in scoped_meetings[-10:]]
+                value['roundtable_meetings'] = views if not (before or after or around) else []
+                value['meeting_summaries'] = [meeting_summary(view) for view in views]
+                value['meeting_count'] = len(scoped_meetings)
+            except ValueError:
+                value.update(roundtable_meetings=[], meeting_summaries=[], meeting_count=0,
+                             meeting_error='圆桌记录待核对；原数据已保留。')
             value['model_resolution'] = self.model_resolution(conv)
             chosen = turns[start:end]
             chosen_ids = {turn['id'] for turn in chosen}
@@ -1228,7 +1364,7 @@ class Console:
                     'features': {'quota': True, 'codex_binding': True, 'light_history': True, 'resources': True, 'resource_summary': True, 'context_insights': True, 'window_models': True,
                                  'windows_portable': os.name == 'nt', 'task_recovery': True, 'context_compaction': True, 'history_search': True, 'panel_backups': True, 'account_switch': os.name != 'nt', 'panel_auto_open': True,
                                  'session_groups': True, 'conversation_versions': True, 'proxy_environment': True,
-                                  'gpt_collaboration': True, 'multi_ai_collaboration': True, 'console_startup': True, 'roundtable_host': True, 'roundtable_messages': True, 'current_turn_results': True, 'global_model': True,
+                                  'gpt_collaboration': True, 'multi_ai_collaboration': True, 'console_startup': True, 'roundtable_host': True, 'roundtable_messages': True, 'roundtable_meetings': True, 'current_turn_results': True, 'global_model': True,
                                   'collaboration_history': True, 'verified_api_recovery': True,
                                   'quota_failover': True, 'model_resolution': True, 'configuration_transfer': True, 'software_updates': True, 'collaboration_results': True, 'queue_priority': True, 'foreground_reload': bool(self.reload_callback)},
                     'console_startup': self.console_startup_info(),
@@ -1358,7 +1494,7 @@ class Console:
             self.health_thread = threading.Thread(target=check, daemon=True)
             self.health_thread.start()
 
-    def submit(self, cid, prompt, model, kind='text', branch=None, branch_title=None, codex_dispatch=False):
+    def submit(self, cid, prompt, model, kind='text', branch=None, branch_title=None, codex_dispatch=False, meeting_id=None, meeting_stage=None):
         if os.name == 'nt' and isinstance(prompt, str) and len(prompt.encode('utf-16-le')) // 2 > 26000:
             raise ValueError('Windows 单次任务最多约 26000 个 UTF-16 字符，请拆分长材料后继续同一会话。')
         if not isinstance(prompt, str) or not prompt.strip() or len(prompt.encode()) > 100000:
@@ -1373,6 +1509,30 @@ class Console:
             conv = self.conversation(cid)
             if conv is None:
                 raise ValueError('对话不存在。')
+            linked_meeting = None
+            if meeting_id is not None or meeting_stage is not None:
+                if (not codex_dispatch or kind != 'text' or not isinstance(meeting_id, str)
+                        or not re.fullmatch(r'[a-f0-9]{32}', meeting_id)
+                        or meeting_stage not in ('proposal', 'review', 'summary')):
+                    raise ValueError('圆桌任务需为明确阶段的 Codex 文字派发。')
+                records = validate_meetings(conv)
+                linked_meeting = next((m for m in records if m['id'] == meeting_id), None)
+                if not linked_meeting or branch is not None and branch != linked_meeting['branch']:
+                    raise ValueError('圆桌与当前工作会话不一致。')
+                branch = linked_meeting['branch']
+                current_view = meeting_view(conv, linked_meeting)
+                slot = next((v for v in current_view['slots'] if v['provider'] == 'agy' and v['stage'] == meeting_stage), None)
+                if not slot:
+                    raise ValueError('该会议没有此 Agy 阶段。')
+                if slot.get('turn_id'):
+                    prior = next((t for t in conv['turns'] if t['id'] == slot['turn_id']), None)
+                    if prior and prior['prompt'] == prompt.strip() and (not model or model == prior.get('requested_model')):
+                        return copy.deepcopy(dict(prior, duplicate_submission=True))
+                    raise ConflictError('此会议阶段已有任务，未重复派发。')
+                if slot['status'] != 'pending':
+                    raise ConflictError('此会议阶段已有发送记录，请先核对原结果。')
+                if roundtable_policy(conv)['mode'] != 'roundtable':
+                    raise ValueError('圆桌模式已关闭，未派发新阶段。')
             explicit_model = bool(model)
             config = (conv.get('fallback_preferences') or {}).get(kind) or {}
             scoped = conv.get('model_preferences') or {}
@@ -1392,13 +1552,18 @@ class Console:
             if codex_dispatch and not collaboration_allowed(conv, 'agy'):
                 raise ValueError('这条聊天已暂停多 AI 协作或关闭 Agy。请在固定页面确认；仍可在网页手动给 Agy 发任务。')
             meeting = None
-            if codex_dispatch:
+            if codex_dispatch and linked_meeting is None:
                 setting = roundtable_policy(conv)
                 if setting['mode'] == 'roundtable':
                     plan = roundtable_plan(conv)
                     if not plan['ready']:
                         raise ValueError('圆桌当前不可派发：' + plan['reason'] + '。请检查主持和参与方设置。')
                     meeting = setting
+            if linked_meeting is not None:
+                frozen = linked_meeting['roundtable']
+                if frozen['host'] != 'codex' and not collaboration_allowed(conv, frozen['host']):
+                    raise ValueError('该会议主持已暂停，未派发新阶段。')
+                meeting = copy.deepcopy(frozen)
             lane = branch_for(conv, branch, create=True, title=branch_title)
             if lane.get('restored_context_missing'):
                 sid = lane.get('agy_id')
@@ -1432,9 +1597,28 @@ class Console:
                 turn['expected_agy_id'] = lane.get('agy_id')
             if not conv['turns'] and not conv.get('custom_title'):
                 conv['title'] = prompt.strip().splitlines()[0][:30]
+            if linked_meeting is not None:
+                turn.update(meeting_id=meeting_id, meeting_stage=meeting_stage)
+                candidate_conv = dict(conv, turns=conv['turns'] + [turn])
+                updated_meeting = link_meeting_turn(candidate_conv, meeting_id, meeting_stage, turn, turn['created_at'])
+                previous_meetings = conv.get('roundtable_meetings')
+                previous_updated = conv.get('updated_at')
+                conv['roundtable_meetings'] = [updated_meeting if m['id'] == meeting_id else m for m in records]
             conv['turns'].append(turn)
             conv['updated_at'] = now()
-            self.save(conv)
+            try:
+                self.save(conv)
+            except Exception:
+                if linked_meeting is not None:
+                    conv['turns'].remove(turn)
+                    conv['roundtable_meetings'] = previous_meetings
+                    conv['updated_at'] = previous_updated
+                    try:
+                        write_json(self.file, self.state)
+                    except Exception:
+                        pass
+                    self._touch(conv)
+                raise
             self.jobs.put((cid, turn['id']))
             return turn
 
@@ -1989,6 +2173,16 @@ class Handler(BaseHTTPRequestHandler):
                 return
             except (OSError, ValueError):
                 return self.respond(404, {'error': '备份文件不可用。'})
+        match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/meetings(?:/([a-f0-9]{32}))?', path)
+        if match:
+            try:
+                return self.respond(200, app.meeting_records(match[1], match[2], query.get('branch', [None])[0],
+                                                           query.get('before', [None])[0], int(query.get('limit', ['10'])[0]),
+                                                           query['ids'][0].split(',') if 'ids' in query else None))
+            except ValueError as exc:
+                return self.respond(400, {'error': str(exc)})
+            except KeyError as exc:
+                return self.respond(404, {'error': str(exc)})
         match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/context', path)
         if match:
             try:
@@ -2205,6 +2399,12 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/roundtable', path)
         if match:
             return 200, app.set_roundtable(match[1], body)
+        match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/meetings', path)
+        if match:
+            return 200, app.create_meeting(match[1], body)
+        match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/meetings/([a-f0-9]{32})/events', path)
+        if match:
+            return 200, app.record_meeting_event(match[1], match[2], body)
         match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/roundtable/messages', path)
         if match:
             return 200, app.record_roundtable_message(match[1], body)
@@ -2222,7 +2422,7 @@ class Handler(BaseHTTPRequestHandler):
             return 202, {'ok': True}
         match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/turns', path)
         if match:
-            return 202, copy.deepcopy(app.submit(match[1], body.get('prompt'), body.get('model', DEFAULT_MODEL), body.get('kind', 'text'), body.get('branch'), body.get('branch_title'), body.get('codex_dispatch', False)))
+            return 202, copy.deepcopy(app.submit(match[1], body.get('prompt'), body.get('model', DEFAULT_MODEL), body.get('kind', 'text'), body.get('branch'), body.get('branch_title'), body.get('codex_dispatch', False), body.get('meeting_id'), body.get('meeting_stage')))
         match = re.fullmatch(r'/api/turns/([a-f0-9]{32})/cancel', path)
         if match:
             app.stop(match[1])
