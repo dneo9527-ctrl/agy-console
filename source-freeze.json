@@ -1,6 +1,6 @@
 {
   ".gitattributes": "705fd4d6451a31d36b3df7de96f83f30ac976c9b4a6d1e51671d8e2f33e2d0da",
-  ".github/workflows/checks.yml": "32ed7668606e51611a5d2798948d94bc5db5ed29b3366b2e1976bfc7dbc89f23",
+  ".github/workflows/checks.yml": "fc417cf94a13aee453197ee5b31cb48926ae6e3a0903dc92f0bb96f40e5c1a0a",
   ".github/workflows/package.yml": "0ad09848aa6436fba95ea1df0caf3e01efafcb9deee2da84e19dc6d3dfbd8ccc",
   ".gitignore": "a847cb7a83fb2c88f78e3c213cfffa931af620dde111d83eeba3053f8953f163",
   "CHANGELOG.md": "ca44cd33996d7974e14dffa1ad4ccc2203b7e7249cc13b90a2f785f7ee71ae61",

@@ -60,6 +60,13 @@ jobs:
         # This does not sign in to the official CLI or call a model.
       - name: Verify companion Skill installation in disposable Codex homes
         run: python -B -m unittest -v test_codex_skill.py
+      - name: Verify independent meetings against native Windows application
+        run: >-
+          python -B -c "import sys, unittest;
+          sys.path.insert(0, 'windows/app');
+          suite = unittest.defaultTestLoader.loadTestsFromNames(['test_roundtable_meetings', 'test_roundtable_meeting_bridge', 'test_roundtable_meeting_http', 'test_meeting_integration']);
+          result = unittest.TextTestRunner(verbosity=2).run(suite);
+          sys.exit(not result.wasSuccessful())"
       - name: Build real per-user installer with bundled runtime
         shell: pwsh
         run: |
