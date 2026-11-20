@@ -13,6 +13,24 @@ from audit import findings, history
 
 
 class ReleaseFrameworkTests(unittest.TestCase):
+    def test_disabled_program_updates_fail_before_creating_any_output(self):
+        if config().get('program_updates_allowed') is not False:
+            self.skipTest('This release has not disabled program-only updates')
+        from package_release import build
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            output = root / 'program'
+            proc = subprocess.run([sys.executable, '-B', str(ROOT/'build_update.py'),
+                '--app-dir', str(ROOT), '--out', str(output), '--target', 'macos-arm64'],
+                capture_output=True, text=True)
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn('Program-only updates are disabled', proc.stderr)
+            self.assertFalse(output.exists())
+            output = root / 'platform'
+            with self.assertRaisesRegex(ValueError, 'Program-only updates are disabled'):
+                build(output, root/'never-read-runtime.zip', '0'*64, include_program_updates=True)
+            self.assertFalse(output.exists())
+
     def test_unversioned_framework_cannot_be_released(self):
         c = dict(config(), status='framework_only', version=None, publish_authorized=False)
         issues = blockers(c)

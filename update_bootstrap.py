@@ -11,8 +11,8 @@ import tempfile
 
 FILES = frozenset(('VERSION index.html app.js style.css panel_actions.js icon.svg server.py '
  'account_status.py activity_monitor.py bridge.py collaboration_review.py conversation_sessions.py '
- 'multi_ai_collaboration.py foreground_reload.py headless_compat.py image_files.py model_policy.py panel_actions.py '
- 'panel_backups.py proxy_env.py quota_failover.py resources.py settings_insights.py task_progress.py '
+ 'foreground_reload.py headless_compat.py image_files.py model_policy.py multi_ai_collaboration.py panel_actions.py '
+ 'panel_backups.py transcript_export.py proxy_env.py quota_failover.py resources.py settings_insights.py task_progress.py '
  'task_queue.py windows_support.py software_updates.py').split())
 MAX_BYTES = 32 * 1024 * 1024
 

@@ -80,6 +80,23 @@ def main():
         require('https://antigravity.google/' in (installed / 'Install-Official-CLI.url').read_text(), 'Wrong official CLI URL')
         passed('first_use_entries_and_public_urls')
 
+        source_root = Path(__file__).resolve().parents[2]
+        source_names = json.loads((source_root / 'release-files.json').read_text(encoding='utf-8'))['source_files']
+        compared = []
+        for name in source_names:
+            if not name.startswith('windows/') or name.startswith('windows/installer/'):
+                continue
+            relative = name[len('windows/'):]
+            require((installed / relative).read_bytes() == (source_root / name).read_bytes(),
+                    'Installed payload differs from exact candidate: ' + relative)
+            compared.append(relative)
+        require('app/transcript_export.py' in compared and 'update_bootstrap.py' in compared,
+                'Complete upgrade omitted new export module or stable bootstrap')
+        for skill_name, expected_files in (('external-ai-team', 9), ('agy-console', 2)):
+            names = [p for p in (installed / 'skills' / skill_name).rglob('*') if p.is_file()]
+            require(len(names) == expected_files, 'Installed Skill closure differs: ' + skill_name)
+        passed('complete_installed_payload_and_bundled_skills', files=len(compared), external_skill_files=9)
+
         code = 'import installation,json;from pathlib import Path;print(json.dumps({"data":str(installation.data_directory(Path.cwd())),"portable":str(installation.data_directory(Path.cwd()/"portable-fixture")),"override":str(installation.data_directory(Path.cwd(),str(Path.cwd()/"explicit-data")))}))'
         proc = run([python, '-B', '-c', code], cwd=installed)
         require(proc.returncode == 0, 'Installed Python import failed: ' + proc.stderr)
@@ -233,6 +250,14 @@ ConvertTo-Json -InputObject @($rows) -Compress'''
     report.update(status='passed', installation_performed='Only disposable GitHub runner',
                   baseline_upgrade='public ' + args.baseline_version + ' installer to ' + expected_version if args.baseline_setup else 'simulated previous marker only',
                   limitations=['No actual official CLI login or model call', 'No Windows SmartScreen/Defender/old OS acceptance claim'])
+    # Each public baseline runs its own full lifecycle on this disposable host.
+    # The successful uninstall above has already verified retention. Remove only
+    # our exact synthetic marker so the next lifecycle cannot reuse old evidence.
+    require(list(data.iterdir()) == [data_sentinel] and data_sentinel.read_bytes() == data_bytes,
+            'Unexpected data in disposable fixture; refuse cleanup')
+    data_sentinel.unlink()
+    data.rmdir()
+    report['own_synthetic_data_cleaned_after_retention_check'] = True
     args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print('Native installer lifecycle passed:', len(report['checks']), flush=True)
 

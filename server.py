@@ -34,7 +34,7 @@ from panel_actions import search_history, recovery_prompt
 from panel_backups import PanelBackups, MAX_UPLOAD, configuration_document, validate_configuration
 from proxy_env import configure_proxy
 from headless_compat import TurnEvidence
-from model_policy import default_model, candidate_models, model_family, quota_groups, quota_empty, effective_order, select_turn_model, window_model_resolution
+from model_policy import default_model, candidate_models, model_family, quota_groups, quota_empty, effective_order, select_turn_model, window_model_resolution, model_selection_settings, clean_global_model_policy
 from quota_failover import clean_order, clean_fallback, quota_rejection, AttemptGuard
 from task_queue import TaskQueue
 from task_progress import record as record_progress, step_progress, finish_progress
@@ -43,6 +43,7 @@ from software_updates import SoftwareUpdates
 from update_bootstrap import confirm as confirm_software_update
 from foreground_reload import PROXY_KEYS, reload_environment, validate_sources
 from conversation_sessions import normalize_sessions, branch_for, official_ids, session_owner, assign_session, session_summaries
+from transcript_export import export_markdown, attachment as transcript_attachment
 from multi_ai_collaboration import (Coordination, default_policy_path, launcher_path,
                                     canonical as collaboration_policy, migrate as migrate_collaboration,
                                     allowed as collaboration_allowed, patch as patch_collaboration,
@@ -50,7 +51,7 @@ from multi_ai_collaboration import (Coordination, default_policy_path, launcher_
                                     validate_roundtable, patch_roundtable, roundtable_plan, roundtable_prompt,
                                     roundtable_message_request, validate_roundtable_messages,
                                     new_meeting, validate_meetings, record_meeting_event,
-                                    link_meeting_turn, meeting_view, meeting_summary)
+                                    link_meeting_turn, meeting_view, meeting_summary, meeting_context)
 
 ROOT = Path(__file__).resolve().parent
 APP_VERSION = (ROOT / 'VERSION').read_text(encoding='utf-8').strip()
@@ -193,6 +194,7 @@ class Console:
         self.health_processes = {}
         self.health_thread = None
         self.account_thread = None
+        self.account_switch_origin = None
         self.account_lock = threading.Lock()
         self.account_reader = account_reader or probe_account
         self.notification_sender = notification_sender
@@ -206,7 +208,7 @@ class Console:
         self.last_stream_save = 0
         self.fallback_blocks = {}
         self.token = secrets.token_urlsafe(32)
-        self.health = {'connected': False, 'checking': True, 'version': '', 'error': '',
+        self.health = {'connected': False, 'checking': True, 'account_syncing': False, 'version': '', 'error': '',
                        'models': [{'id': DEFAULT_MODEL, 'label': 'Gemini 4 Argon (High)'}],
                        'account': {'state': 'unknown', 'email': None, 'name': None,
                                    'source': '官方 CLI statusLine', 'checked_at': None,
@@ -225,6 +227,8 @@ class Console:
         self.state.setdefault('preferred_model_updated_at', None)
         self.state.setdefault('model_order', [])
         self.state.setdefault('model_order_version', 0)
+        self.state['global_model_policy'] = clean_global_model_policy(self.state.get('global_model_policy', {}))
+        self.state.setdefault('global_model_policy_version', 0)
         for conv in self.state['conversations']:
             normalize_sessions(conv)
             migrate_collaboration(conv)
@@ -678,6 +682,17 @@ class Console:
                     'first_id': page[0]['id'] if page else None,
                     'last_id': page[-1]['id'] if page else None}
 
+    def meeting_context(self, cid, mid, stage, provider):
+        """On-demand scoped evidence; no dispatch, policy write or history reset."""
+        with self.lock:
+            conv = self.conversation(cid)
+            if not conv or not conv.get('codex_thread_id'):
+                raise KeyError('固定聊天不存在。')
+            meeting = next((m for m in validate_meetings(conv) if m['id'] == mid), None)
+            if meeting is None:
+                raise KeyError('本聊天没有这场圆桌。')
+            return meeting_context(conv, meeting, stage, provider)
+
     def persist_meetings(self, conv, records, stamp):
         """Content-only transaction; policy mirror and credentials are untouched."""
         candidate = dict(conv, roundtable_meetings=records)
@@ -877,6 +892,24 @@ class Console:
             return {'id': cid, 'fallback_preferences': copy.deepcopy(conv['fallback_preferences']),
                     'model_resolution': self.model_resolution(conv)}
 
+    def set_global_model_policy(self, kind, settings, version):
+        if kind not in ('text', 'image'):
+            raise ValueError('请选择文字或生图。')
+        value = clean_global_model_policy({kind: settings})
+        with self.lock:
+            if self.stopping or self.maintenance:
+                raise ConflictError('服务暂时不能保存设置。')
+            current = self.state.get('global_model_policy_version', 0)
+            if type(version) is not int or version != current:
+                raise ConflictError('全局智能选择已被其他窗口更新，请刷新后调整。')
+            if any(m not in {x['id'] for x in self.health['models']} for m in value[kind].get('models', [])):
+                raise ValueError('模型列表含当前不可用模型，请重新选择。')
+            self.state.setdefault('global_model_policy', {})[kind] = value[kind]
+            self.state['global_model_policy_version'] = current + 1
+            self.save()
+            return {'global_model_policy': copy.deepcopy(self.state['global_model_policy']),
+                    'global_model_policy_version': current + 1, 'model_resolution': self.model_resolution({})}
+
     def blocked_models(self):
         account = self.health.get('account') or {}
         if account.get('state') != 'known' or not account.get('email'):
@@ -905,6 +938,7 @@ class Console:
 
     def policy_snapshot(self):
         return {'health': self.health, 'preferred_model': self.state.get('preferred_model', ''),
+                'global_model_policy': self.state.get('global_model_policy', {}),
                 'model_order': self.state.get('model_order', []), 'blocked_models': self.blocked_models()}
 
     def verified_image_models(self):
@@ -1104,6 +1138,8 @@ class Console:
             raise ValueError('圆桌主持配置只能导入已绑定 Codex 的固定聊天。')
         available={m['id'] for m in self.health['models']}
         selected=[settings['global']['preferred_model']]
+        for shared in settings['global'].get('global_model_policy', {}).values():
+            selected.extend(shared.get('models', []))
         if apply_window:
             selected.extend(window.get('model_preferences',{}).values())
             for fallback in window.get('fallback_preferences',{}).values():selected.extend(fallback.get('models',[]))
@@ -1131,6 +1167,9 @@ class Console:
             settings=preview['document']['settings'];candidate=dict(original)
             candidate.update(preferred_model=settings['global']['preferred_model'],preferred_model_updated_at=now(),
                              model_order=settings['global']['model_order'],model_order_version=original.get('model_order_version',0)+1)
+            if 'global_model_policy' in settings['global']:
+                candidate.update(global_model_policy=copy.deepcopy(settings['global']['global_model_policy']),
+                                 global_model_policy_version=original.get('global_model_policy_version', 0)+1)
             if apply_window:
                 window=dict(self.conversation(cid))
                 for key in ('model_preferences','fallback_preferences','gpt_collaboration','auto_open_activity'):
@@ -1178,6 +1217,8 @@ class Console:
                     state.setdefault('history_overrides', {})
                     state.setdefault('preferred_model', '')
                     state.setdefault('preferred_model_updated_at', None)
+                    state.setdefault('global_model_policy', {})
+                    state.setdefault('global_model_policy_version', 0)
                     for conv in state['conversations']:
                         migrate_collaboration(conv)
                         for lane in normalize_sessions(conv)['branches'].values():
@@ -1203,6 +1244,7 @@ class Console:
                                 capture_output=True, timeout=5, check=False)
         if result.returncode:
             raise ValueError('未能打开 CC Switch，请手动启动。')
+        self.account_switch_origin = copy.deepcopy(self.health['account'])
         return {'opened': True, 'app': 'CC Switch', 'account_changed': False}
 
     def import_codex_bindings(self):
@@ -1287,6 +1329,8 @@ class Console:
                                   'preferred_model': self.state['preferred_model'],
                                   'preferred_model_updated_at': self.state['preferred_model_updated_at'],
                                   'model_order': self.state.get('model_order', []), 'model_order_version': self.state.get('model_order_version', 0),
+                                  'global_model_policy': self.state.get('global_model_policy', {}),
+                                  'global_model_policy_version': self.state.get('global_model_policy_version', 0),
                                   'effective_model_order': effective_order(self.policy_snapshot()),
                                   'blocked_models': self.blocked_models(), 'verified_image_models': self.verified_image_models(),
                                   'history_overrides': self.state['history_overrides'], 'health': self.health, 'queue': self.queue_snapshot(),
@@ -1406,11 +1450,11 @@ class Console:
             active = sum(t['status'] in BUSY for c in self.state['conversations'] for t in c['turns'])
             return {'app': 'antigravity-console', 'version': APP_VERSION, 'updates': self.software_updates.snapshot(), 'root': str(ROOT), 'pid': os.getpid(),
                     'features': {'quota': True, 'codex_binding': True, 'light_history': True, 'resources': True, 'resource_summary': True, 'context_insights': True, 'window_models': True,
-                                 'task_recovery': True, 'context_compaction': True, 'history_search': True, 'panel_backups': True, 'account_switch': True, 'panel_auto_open': True,
+                                 'task_recovery': True, 'context_compaction': True, 'history_search': True, 'panel_backups': True, 'account_switch': True, 'account_sync': True, 'panel_auto_open': True,
                                  'session_groups': True, 'conversation_versions': True, 'proxy_environment': True,
-                                  'gpt_collaboration': True, 'multi_ai_collaboration': True, 'console_startup': True, 'roundtable_host': True, 'roundtable_messages': True, 'roundtable_meetings': True, 'roundtable_meeting_actions': True, 'roundtable_actions': True, 'current_turn_results': True, 'global_model': True,
+                                  'gpt_collaboration': True, 'multi_ai_collaboration': True, 'console_startup': True, 'roundtable_host': True, 'roundtable_messages': True, 'roundtable_meetings': True, 'roundtable_context': True, 'roundtable_meeting_actions': True, 'roundtable_actions': True, 'current_turn_results': True, 'global_model': True,
                                   'collaboration_history': True, 'verified_api_recovery': True,
-                                  'quota_failover': True, 'model_resolution': True, 'configuration_transfer': True, 'software_updates': True, 'collaboration_results': True, 'queue_priority': True, 'foreground_reload': bool(self.reload_callback)},
+                                  'quota_failover': True, 'global_model_policy': True, 'model_resolution': True, 'configuration_transfer': True, 'software_updates': True, 'collaboration_results': True, 'queue_priority': True, 'foreground_reload': bool(self.reload_callback)},
                     'console_startup': self.console_startup_info(),
                     'coordination_ready': not bool(self.coordination_error),
                     'coordination_error': self.coordination_error,
@@ -1493,12 +1537,72 @@ class Console:
                            'detail': '本次账号检查失败，请在终端确认后重试。'}
             with self.lock:
                 self.health['account'] = account
+                if not self.health.get('account_syncing'):
+                    self.health.pop('account_sync_result', None)
                 return copy.deepcopy(account)
+
+    def sync_account(self):
+        """Refresh shared official identity and models once, without changing login."""
+        def sync():
+            try:
+                before = self.check_account()
+                if before.get('state') not in ('known', 'api_key'):
+                    raise ValueError('CLI 登录尚未核实，请在 CC Switch 完成选择后重试同步。')
+                result = self.health_command(['models'], 35)
+                models = []
+                for line in result.stdout.splitlines():
+                    parts = line.split('\t', 1)
+                    if len(parts) == 2 and re.fullmatch(r'[a-zA-Z0-9_.-]+', parts[0]):
+                        models.append({'id': parts[0], 'label': parts[1]})
+                account = self.check_account()
+                if (before.get('state'), before.get('email')) != (account.get('state'), account.get('email')):
+                    raise ValueError('同步期间 CLI 账号发生变化，请等待切换完成后重试同步。')
+                if result.returncode or not models:
+                    raise ValueError('账号已读取，但模型列表未同步；请检查 CLI 登录与网络后重试。')
+                origin_key = (origin.get('state'), origin.get('email'))
+                changed = origin_key != (account.get('state'), account.get('email')) if origin.get('state') in ('known', 'api_key') else None
+                detail = '账号已变，已同步' if changed is True else '账号未变，已同步' if changed is False else '当前账号已核实并同步'
+                with self.lock:
+                    if self.stopping:
+                        raise ValueError('服务正在关闭。')
+                    self.health.update(connected=True, models=models, error='',
+                                       account_sync_result={'status': 'completed', 'changed': changed, 'detail': detail, 'checked_at': now()})
+                announce('CLI ' + detail + '。原服务和聊天保持不变。')
+            except Exception as error:
+                with self.lock:
+                    self.health.update(connected=False, models=[], error=str(error)[:600],
+                                       account_sync_result={'status': 'failed', 'changed': None,
+                                                            'detail': '同步未完成，可点“同步”重试', 'checked_at': now()})
+                if not self.stopping:
+                    announce('CLI 账号同步待检查：' + str(error)[:600])
+            finally:
+                with self.lock:
+                    self.health.update(checking=False, account_syncing=False)
+                    self._touch()
+        with self.lock:
+            if self.health.get('account_syncing'):
+                return {'accepted': True, 'already_syncing': True}
+            self.require_idle()
+            if self.maintenance:
+                raise ConflictError('服务正在维护，请稍后同步。')
+            origin = copy.deepcopy(self.account_switch_origin or self.health['account'])
+            self.account_switch_origin = None
+            self.health.update(connected=False, checking=True, account_syncing=True, models=[], error='',
+                               account_sync_result={'status': 'syncing', 'changed': None, 'detail': '正在同步当前账号与模型'},
+                               account={'state': 'checking', 'email': None, 'name': None,
+                                        'source': '官方 CLI statusLine', 'checked_at': None,
+                                        'detail': '正在同步当前 CLI 账号与可用模型。'})
+            self._touch()
+            self.health_thread = threading.Thread(target=sync, daemon=True)
+            self.health_thread.start()
+            return {'accepted': True, 'already_syncing': False}
 
     def refresh_account(self):
         with self.lock:
             if self.stopping:
                 raise ValueError('服务正在关闭。')
+            if self.health.get('account_syncing'):
+                return
             if (self.account_thread and self.account_thread.is_alive()) or self.health['account']['state'] == 'checking':
                 return
             self.health['account'] = dict(self.health['account'], state='checking')
@@ -1542,6 +1646,8 @@ class Console:
         if not isinstance(prompt, str) or not prompt.strip() or len(prompt.encode()) > 100000:
             raise ValueError('请填写任务；单次内容最多约 3 万汉字。')
         with self.lock:
+            if self.health.get('account_syncing'):
+                raise ConflictError('正在同步 CLI 账号与模型，请稍后提交任务。')
             if self.maintenance:
                 raise ConflictError('正在处理备份，请稍后再提交任务。')
             if kind not in ('text', 'image'):
@@ -1576,9 +1682,7 @@ class Console:
                 if roundtable_policy(conv)['mode'] != 'roundtable':
                     raise ValueError('圆桌模式已关闭，未派发新阶段。')
             explicit_model = bool(model)
-            config = (conv.get('fallback_preferences') or {}).get(kind) or {}
-            scoped = conv.get('model_preferences') or {}
-            preferred = scoped[kind] if kind in scoped else self.state.get('preferred_model')
+            preferred, config = model_selection_settings(self.policy_snapshot(), conv, kind)
             if model == '':
                 if preferred and preferred in {m['id'] for m in self.health['models']}:
                     model = preferred  # Keep the saved preference; refresh quota again when dequeued.
@@ -1627,12 +1731,11 @@ class Console:
                 # Freeze the exit from a persistent meeting persona at submit.
                 # Manual tasks and lanes that never used a meeting stay untouched.
                 turn['roundtable_reset'] = True
-            config = (conv.get('fallback_preferences') or {}).get(kind) or {}
-            smart = not ((conv.get('model_preferences') or {}).get(kind) if kind in (conv.get('model_preferences') or {}) else self.state.get('preferred_model'))
+            smart = not preferred
             turn.update(requested_model=model if explicit_model else preferred or model, model_selection='explicit' if explicit_model else 'window_or_global',
                         fallback_enabled=not explicit_model and config.get('enabled', True),
                         preflight_enabled=not explicit_model and (config.get('enabled', True) or smart))
-            if config.get('enabled', True) and 'models' in config:
+            if (config.get('enabled', True) or kind in self.state.get('global_model_policy', {})) and 'models' in config:
                 turn['fallback_models'] = list(config['models'])
             record_progress(turn, 'queued', '进入任务队列', 'done', turn['created_at'])
             if conv.get('codex_thread_id'):
@@ -1640,6 +1743,9 @@ class Console:
             if not conv['turns'] and not conv.get('custom_title'):
                 conv['title'] = prompt.strip().splitlines()[0][:30]
             if linked_meeting is not None:
+                # Freeze only completed prerequisite evidence once, under the
+                # same queue lock. Quota fallback retains this exact snapshot.
+                turn['meeting_context'] = meeting_context(conv, linked_meeting, meeting_stage, 'agy')
                 turn.update(meeting_id=meeting_id, meeting_stage=meeting_stage)
                 candidate_conv = dict(conv, turns=conv['turns'] + [turn])
                 updated_meeting = link_meeting_turn(candidate_conv, meeting_id, meeting_stage, turn, turn['created_at'])
@@ -1816,6 +1922,8 @@ class Console:
                     '先核对已有记录，不重复已完成的操作；保留原任务所有约束。')
                 if turn.get('roundtable') is not None:
                     cli_prompt = roundtable_prompt(cli_prompt, turn['roundtable'], conv.get('codex_thread_id'))
+                    if turn.get('meeting_context'):
+                        cli_prompt += '\n\n' + turn['meeting_context']['text']
                 elif turn.get('roundtable_reset') is True:
                     cli_prompt = ('[日常协助 · 非圆桌] 本次为普通有界协助，不担任主持，也不继续此前的圆桌角色。'
                                   '只完成本次实际收到的任务；不组织额外讨论、不编造其他 AI 发言或共识。'
@@ -2211,6 +2319,16 @@ class Handler(BaseHTTPRequestHandler):
                 return
             except (OSError, ValueError):
                 return self.respond(404, {'error': '备份文件不可用。'})
+        match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/meetings/([a-f0-9]{32})/context', path)
+        if match:
+            try:
+                if set(query) != {'stage', 'provider'} or any(len(value) != 1 for value in query.values()):
+                    raise ValueError('请选择一个会议阶段和一个冻结参与方。')
+                return self.respond(200, app.meeting_context(match[1], match[2], query['stage'][0], query['provider'][0]))
+            except ValueError as exc:
+                return self.respond(400, {'error': str(exc)})
+            except KeyError as exc:
+                return self.respond(404, {'error': str(exc)})
         match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/meetings(?:/([a-f0-9]{32}))?', path)
         if match:
             try:
@@ -2299,22 +2417,22 @@ class Handler(BaseHTTPRequestHandler):
                 conv = copy.deepcopy(app.conversation(match[1]))
             if conv is None:
                 return self.respond(404, {'error': '对话不存在'})
-            sections = ['# ' + conv['title']]
-            for turn in conv['turns']:
-                lane = branch_for(conv, turn.get('branch'))
-                sections += ['\n## 会话：' + (lane or {}).get('title', '原会话'),
-                             '\n### 任务\n' + turn['prompt'], '\n### Antigravity\n' + turn['response'],
-                             '\n状态：' + turn['status'] + ' | 模型：' + turn['model']]
-                if turn.get('account', {}).get('email'):
-                    sections += ['执行前核对账号：' + turn['account']['email'] +
-                                 ' | 核对时间：' + str(turn['account'].get('checked_at') or '未知')]
-                if turn.get('images'):
-                    sections += ['\n图片：' + ', '.join(i['name'] for i in turn['images']) +
-                                 '（请在控制台点击“下载原图”保存；图片文件独立于此文本导出。）']
-                if turn.get('error'):
-                    sections += ['错误：' + turn['error']]
-            return self.respond(200, '\n'.join(sections), 'text/markdown; charset=utf-8',
-                                {'Content-Disposition': 'attachment; filename="antigravity-conversation.md"'})
+            try:
+                # Scope is explicit and checked against this detached snapshot;
+                # GET never binds sessions, changes preferences or calls a model.
+                export_query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                if any(key not in ('branch', 'meeting', 'codex') or len(value) != 1 or not value[0]
+                       for key, value in export_query.items()):
+                    raise ValueError('导出范围参数无效。')
+                body, filename = export_markdown(conv, branch=export_query.get('branch', [None])[0],
+                    meeting_id=export_query.get('meeting', [None])[0], codex_thread_id=export_query.get('codex', [None])[0],
+                    origin='http://127.0.0.1:' + str(self.server.server_port))
+            except KeyError as error:
+                return self.respond(404, {'error': str(error).strip("'")})
+            except ValueError as error:
+                return self.respond(400, {'error': str(error)})
+            return self.respond(200, body, 'text/markdown; charset=utf-8',
+                                {'Content-Disposition': transcript_attachment(filename, conv['id'])})
         assets = {'/': ('index.html', 'text/html; charset=utf-8'),
                   '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
                   '/panel_actions.js': ('panel_actions.js', 'text/javascript; charset=utf-8'),
@@ -2404,12 +2522,18 @@ class Handler(BaseHTTPRequestHandler):
             return 200, app.set_model_order(body.get('order'), body.get('version'), body.get('if_unset', False))
         if path == '/api/model':
             return 200, app.set_preferred_model(body.get('model'))
+        if path == '/api/global-model-policy':
+            return 200, app.set_global_model_policy(body.get('kind'), body.get('settings'), body.get('version'))
         if path == '/api/queue/reorder':
             return 200, app.reorder_queue(body.get('turn_id'), body.get('direction'), body.get('version'))
         if path == '/api/service/reload':
             return 202, app.prepare_reload()
         if path == '/api/account/switch':
             return 200, app.open_account_switcher()
+        if path == '/api/account/sync':
+            if body:
+                raise ValueError('账号同步无需账号、凭据或其他参数。')
+            return 202, app.sync_account()
         match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/fallback', path)
         if match:
             return 200, app.set_fallback(match[1], body.get('kind'), body.get('settings'))

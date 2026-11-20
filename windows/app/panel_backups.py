@@ -13,6 +13,7 @@ import time
 import zipfile
 from collaboration_review import validate_review
 from quota_failover import clean_order, clean_fallback
+from model_policy import clean_global_model_policy
 from software_updates import SoftwareUpdates
 from multi_ai_collaboration import canonical as collaboration_policy, portable as portable_collaboration, validate as validate_collaboration, portable_roundtable, validate_roundtable, validate_roundtable_messages, validate_meetings
 
@@ -38,7 +39,8 @@ def configuration_document(state, updates, ui, window=None, app_version=''):
             window_settings['gpt_collaboration'] = value['enabled'] and value['providers']['agy']['enabled']
     return validate_configuration({'format': 'agy-console-settings', 'schema': 1,
         'app_version': app_version, 'exported_at': datetime.now(timezone.utc).isoformat(),
-        'settings': {'global': {'preferred_model': state.get('preferred_model', ''), 'model_order': state.get('model_order', [])},
+        'settings': {'global': {'preferred_model': state.get('preferred_model', ''), 'model_order': state.get('model_order', []),
+                                'global_model_policy': state.get('global_model_policy', {})},
                      'window': window_settings, 'updates': updates,
                      'ui': {key: ui.get(key, default) for key, default in (('font',14), ('idleMs',12000))}}})
 
@@ -55,12 +57,15 @@ def validate_configuration(value):
         raise ValueError('配置版本或时间无效。')
     settings=value.get('settings');obj(settings, ('global','window','updates','ui'))
     if set(settings) != {'global','window','updates','ui'}:raise ValueError('配置缺少必要设置。')
-    global_settings=settings['global'];obj(global_settings, ('preferred_model','model_order'))
+    global_settings=settings['global'];obj(global_settings, ('preferred_model','model_order','global_model_policy'))
+    shared = clean_global_model_policy(global_settings['global_model_policy']) if 'global_model_policy' in global_settings else None
     model=global_settings.get('preferred_model')
     if not isinstance(model,str) or model and not re.fullmatch(r'[A-Za-z0-9_.-]{1,100}',model):raise ValueError('配置中的模型无效。')
     global_settings={'preferred_model':model,'model_order':clean_order(global_settings.get('model_order'))}
+    if shared is not None:
+        global_settings['global_model_policy'] = shared
     ui=settings['ui'];obj(ui, ('font','idleMs'))
-    if type(ui.get('font')) is not int or ui['font'] not in (14,16,18) or type(ui.get('idleMs')) is not int or ui['idleMs'] not in (4000,12000):
+    if type(ui.get('font')) is not int or ui['font'] not in (12,14,16,18) or type(ui.get('idleMs')) is not int or ui['idleMs'] not in (4000,12000):
         raise ValueError('配置中的字号或同步频率无效。')
     SoftwareUpdates.validate_preferences(settings['updates'])
     window=settings['window']
@@ -90,7 +95,7 @@ def ui_preferences(value):
     ui = value.get('settings') if isinstance(value.get('settings'), dict) else {}
     order = ui.get('modelOrder') if isinstance(ui.get('modelOrder'), list) else []
     pins = value.get('pins') if isinstance(value.get('pins'), list) else []
-    return {'settings': {'font': ui.get('font') if ui.get('font') in (14, 16, 18) else 14,
+    return {'settings': {'font': ui.get('font') if ui.get('font') in (12, 14, 16, 18) else 14,
                          'idleMs': ui.get('idleMs') if ui.get('idleMs') in (4000, 12000) else 12000,
                          'modelOrder': list(dict.fromkeys(x for x in order if isinstance(x, str) and re.fullmatch(r'[a-z0-9][a-z0-9_.-]{0,99}', x)))[:128]},
             'pins': [x for x in pins if isinstance(x, str) and re.fullmatch(r'(?:panel:[a-f0-9]{32}|external:[a-f0-9-]{36})', x)][:512]}
@@ -100,6 +105,9 @@ def validate_state(value):
     if not isinstance(value, dict) or not isinstance(value.get('conversations'), list) or len(value['conversations']) > 5000:
         raise ValueError('备份中的面板数据格式不正确。')
     clean_order(value.get('model_order', []))
+    clean_global_model_policy(value.get('global_model_policy', {}))
+    if type(value.get('global_model_policy_version', 0)) is not int or value.get('global_model_policy_version', 0) < 0:
+        raise ValueError('备份中的全局智能选择版本无效。')
     if type(value.get('model_order_version', 0)) is not int or value.get('model_order_version', 0) < 0:
         raise ValueError('备份中的模型排序版本无效。')
     ids, turn_ids, threads, official, images = set(), set(), set(), set(), 0

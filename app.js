@@ -1,6 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 let token = document.querySelector('meta[name="console-token"]').content;
+let accountReturnSync={armed:false,departed:false,ready:false,opening:false,pending:false};
 let snapshot = {conversations:[],health:{}}, activeId = sessionStorage.getItem('agy-active'), busy=false, online=true, lastRender='', toastTimer, kindRestored=false, accountRefreshPending=false, accountExpanded=false;
 let viewMode=sessionStorage.getItem('agy-view')||'home', externalId=sessionStorage.getItem('agy-external'), activityState={sessions:[],unmatched_processes:[],checked_at:null,warning:''},externalDetail=null,activityPending=false,activityOnline=true,activityFingerprint='';
 if(!['home','activity','panel','external'].includes(viewMode))viewMode='home';
@@ -16,6 +17,7 @@ const pollTimers=new Map();
 let memoryPollSync=null;
 const initialAddress=new URLSearchParams(location.search);
 let requestedCodexThread=initialAddress.get('codex'),boundViewApplied=false;
+let requestedMeetingId=/^[a-f0-9]{32}$/.test(initialAddress.get('meeting')||'')&&/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(requestedCodexThread||'')?initialAddress.get('meeting'):null;
 if(requestedCodexThread){viewMode='home';activeId=null;}
 if(/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(requestedCodexThread||''))sessionStorage.setItem('agy-codex-owner',requestedCodexThread);
 if(/^[a-f0-9]{32}$/.test(initialAddress.get('chat')||'')){activeId=initialAddress.get('chat');viewMode='panel';}
@@ -89,12 +91,12 @@ const themePresets={
 };
 const validThemes=new Set(Object.keys(themePresets));
 function cleanModelOrder(value){return Array.isArray(value)?[...new Set(value.filter(id=>typeof id==='string'&&/^[a-z0-9][a-z0-9_.-]{0,99}$/.test(id)))].slice(0,128):[];}
-function loadUISettings(){try{const value=JSON.parse(localStorage.getItem(uiSettingsKey)||'{}');if(value.theme==='night'){value.theme='light';try{localStorage.setItem(uiSettingsKey,JSON.stringify(value));}catch(e){}}return {font:[14,16,18].includes(value.font)?value.font:14,idleMs:[4000,12000].includes(value.idleMs)?value.idleMs:12000,theme:validThemes.has(value.theme)?value.theme:'light',modelOrder:cleanModelOrder(value.modelOrder)};}catch(e){return {font:14,idleMs:12000,theme:'light',modelOrder:[]};}}
+function loadUISettings(){try{const value=JSON.parse(localStorage.getItem(uiSettingsKey)||'{}');if(value.theme==='night'){value.theme='light';try{localStorage.setItem(uiSettingsKey,JSON.stringify(value));}catch(e){}}return {font:[12,14,16,18].includes(value.font)?value.font:14,idleMs:[4000,12000].includes(value.idleMs)?value.idleMs:12000,theme:validThemes.has(value.theme)?value.theme:'light',modelOrder:cleanModelOrder(value.modelOrder)};}catch(e){return {font:14,idleMs:12000,theme:'light',modelOrder:[]};}}
 let uiSettings=loadUISettings();
 let modelOrderExpanded=false;
 let settingsInsightsExpanded=false,settingsInsights={key:null,sequence:0,data:null,error:'',pending:false};
 function applyUISettings(){const theme=themePresets[uiSettings.theme]||themePresets.light;for(const [name,value] of Object.entries(theme.vars))document.documentElement.style.setProperty('--'+name,value);if(document.documentElement.dataset)document.documentElement.dataset.theme=uiSettings.theme;document.documentElement.style.setProperty('--chat-font-size',uiSettings.font+'px');}
-function saveUISetting(name,value){if(name==='font'&&[14,16,18].includes(value)||name==='idleMs'&&[4000,12000].includes(value)||name==='theme'&&validThemes.has(value))uiSettings[name]=value;else return;
+function saveUISetting(name,value){if(name==='font'&&[12,14,16,18].includes(value)||name==='idleMs'&&[4000,12000].includes(value)||name==='theme'&&validThemes.has(value))uiSettings[name]=value;else return;
   try{localStorage.setItem(uiSettingsKey,JSON.stringify(uiSettings));}catch(e){toast('已应用，但浏览器未能保存设置。');}applyUISettings();renderSettings();if(name==='idleMs')startPolling();}
 function settingsOwner(){if(viewMode==='panel')return conversationMeta(activeId);const owner=fixedOwnerConversation();return requestedCodexThread&&owner?.codex_thread_id===requestedCodexThread?owner:null;}
 function renderSettings(){
@@ -156,13 +158,15 @@ function moveModelOrder(id,direction){
 let fallbackExpanded=false,fallbackSaving=false,fallbackScopeId='',fallbackAvailableExpanded=false;
 function fallbackView(){
   const owner=settingsOwner()||conversationMeta(fallbackScopeId),kind=$('fallback-kind').value==='image'?'image':'text';
-  return {owner,kind,settings:owner?.fallback_preferences?.[kind]||{enabled:true}};
+  const global=snapshot.service?.features?.global_model_policy===true;
+  const configured=Object.hasOwn(snapshot.global_model_policy||{},kind);
+  return {owner:global?null:owner,kind,global,configured,settings:global?snapshot.global_model_policy?.[kind]||{enabled:true}:owner?.fallback_preferences?.[kind]||{enabled:true}};
 }
 function fallbackCandidates(owner,kind,settings){
   if(Array.isArray(settings.models))return settings.models;
   const models=orderedModels(snapshot.health?.models||[],uiSettings.modelOrder);
   if(kind==='text')return modelFamilies(models).map(g=>g.variants[0].id);
-  const selected=owner?.model_preferences?.image||snapshot.preferred_model;
+  const selected=snapshot.service?.features?.global_model_policy?null:owner?.model_preferences?.image||snapshot.preferred_model;
   return [...new Set([selected,...(snapshot.verified_image_models||[])].filter(Boolean))];
 }
 function fallbackModelGroups(owner,kind,settings){
@@ -171,7 +175,7 @@ function fallbackModelGroups(owner,kind,settings){
 }
 function moveFallbackModel(family,direction){
   if(fallbackSaving)return;
-  const {owner,kind,settings}=fallbackView();if(!owner)return;
+  const {owner,kind,settings,global}=fallbackView();if(!owner&&!global)return;
   const groups=fallbackModelGroups(owner,kind,settings),candidates=fallbackCandidates(owner,kind,settings);
   const selected=groups.map(g=>g.variants.find(m=>candidates.includes(m.id))?.id).filter(Boolean);
   const index=selected.findIndex(id=>groups.find(g=>g.key===family)?.variants.some(m=>m.id===id)),target=index+(direction==='up'?-1:direction==='down'?1:0);
@@ -181,25 +185,27 @@ function moveFallbackModel(family,direction){
 }
 function renderFallbackSettings(){
   const panel=$('fallback-panel');if(!panel)return;
-  const {owner,kind,settings}=fallbackView(),supported=snapshot.service?.features?.quota_failover===true;
+  const {owner,kind,settings,global,configured}=fallbackView(),supported=snapshot.service?.features?.quota_failover===true;
   const fixed=settingsOwner(),scope=$('fallback-scope');
+  const title=$('fallback-title');if(title)title.textContent=global?'全局智能选择':'额度用完自动候补';
   $('fallback-expand').disabled=false;
-  $('fallback-scope-row').hidden=!!fixed;
+  $('fallback-scope-row').hidden=global||!!fixed;
   const options='<option value="">选择要配置的聊天</option>'+(snapshot.conversations||[]).filter(c=>!c.deleted_at).map(c=>'<option value="'+escape(c.id)+'">'+escape(c.title||'未命名聊天')+'</option>').join('');
   if(scope.innerHTML!==options)scope.innerHTML=options;scope.value=fixed?.id||owner?.id||'';scope.disabled=fallbackSaving;
   panel.hidden=!fallbackExpanded;$('fallback-expand').setAttribute('aria-expanded',String(fallbackExpanded));
   $('fallback-expand').textContent=fallbackExpanded?'收起':'配置';
-  $('fallback-summary').textContent=!supported?'加载新版后台后可用':!owner?'按聊天配置 · 文字与生图独立':(settings.enabled?'已开启':'已关闭')+' · '+(kind==='text'?'文字':'生图')+' · '+(Array.isArray(settings.models)?'自选候补':'默认候补');
-  $('fallback-status-chip').textContent=!supported?'需更新':!owner?'未选择聊天':settings.enabled?'已开启':'已关闭';
+  $('fallback-summary').textContent=global?(configured?'所有窗口共用':'未配置 · 保存后全局生效')+' · '+(kind==='text'?'文字':'生图')+(configured?' · '+(settings.enabled?'额度用完自动候补':'自动候补已关'):''):!supported?'加载新版后台后可用':!owner?'按聊天配置 · 文字与生图独立':(settings.enabled?'已开启':'已关闭')+' · '+(kind==='text'?'文字':'生图')+' · '+(Array.isArray(settings.models)?'自选候补':'默认候补');
+  $('fallback-status-chip').textContent=global?'额度用完自动候补':!supported?'需更新':!owner?'未选择聊天':settings.enabled?'已开启':'已关闭';
+  const current=$('global-smart-current');if(current){current.hidden=!global;const resolved=snapshot.model_resolution?.[kind],model=(snapshot.health?.models||[]).find(m=>m.id===resolved?.effective_model);current.textContent='当前：'+(model?model.label:resolved?.error||'等待确认')+' · 窗口手选模型仍优先';}
   if(typeof document!=='undefined')document.querySelectorAll('[data-fallback-kind]').forEach(button=>{if(button.dataset&&button.dataset.fallbackKind)button.setAttribute('aria-pressed',String(button.dataset.fallbackKind===kind));});
   if(!fallbackExpanded)return;
-  const editable=!!owner&&supported&&online&&!fallbackSaving;
-  const button=$('fallback-enabled');button.disabled=!editable;button.setAttribute('aria-checked',String(!!owner&&settings.enabled));button.textContent=fallbackSaving?'保存中…':!owner?'—':settings.enabled?'开':'关';
-  $('fallback-kind').disabled=fallbackSaving;$('fallback-reset').disabled=!editable;
-  if(!owner||!supported){$('fallback-note').textContent=!supported?'当前后台不支持保存候补，请加载新版后台。':'先选择聊天，再设置文字或生图候补。';$('fallback-models').innerHTML='';$('fallback-available').innerHTML='';$('fallback-add-toggle').hidden=true;$('fallback-status').textContent='尚未修改任何配置';return;}
+  const editable=(global||!!owner)&&supported&&online&&!fallbackSaving;
+  const button=$('fallback-enabled');button.disabled=!editable;button.setAttribute('aria-checked',String((global||!!owner)&&settings.enabled));button.textContent=fallbackSaving?'保存中…':!owner&&!global?'—':settings.enabled?'开':'关';
+  $('fallback-kind').disabled=fallbackSaving;$('fallback-reset').disabled=!editable;$('fallback-reset').textContent=global&&!configured?'启用此名单':'恢复默认';
+  if((!owner&&!global)||!supported){$('fallback-note').textContent=!supported?'当前后台不支持保存候补，请加载新版后台。':'先选择聊天，再设置文字或生图候补。';$('fallback-models').innerHTML='';$('fallback-available').innerHTML='';$('fallback-add-toggle').hidden=true;$('fallback-status').textContent='尚未修改任何配置';return;}
   const candidates=fallbackCandidates(owner,kind,settings),groups=fallbackModelGroups(owner,kind,settings);
   const count=groups.filter(g=>g.variants.some(m=>candidates.includes(m.id))).length;
-  $('fallback-note').textContent=kind==='image'?'仅勾选有生图能力的模型；额度用完后按编号接替。':'当前模型可用时继续使用；额度用完后按编号接替。';
+  $('fallback-note').textContent=global?(kind==='image'?'仅选择支持生图的模型；按编号智能选择，额度用完后接替。':'按编号智能选择可用模型，额度用完后按自选名单接替。'):kind==='image'?'仅勾选有生图能力的模型；额度用完后按编号接替。':'当前模型可用时继续使用；额度用完后按编号接替。';
   let candidateIndex=0;const selectedRows=[];const availableRows=[];
   groups.forEach(g=>{
     const chosen=g.variants.find(m=>candidates.includes(m.id));
@@ -212,13 +218,23 @@ function renderFallbackSettings(){
   if($('fallback-models').innerHTML!==selectedHtml)$('fallback-models').innerHTML=selectedHtml;
   if($('fallback-available').innerHTML!==availableHtml)$('fallback-available').innerHTML=availableHtml;
   $('fallback-add-toggle').hidden=!availableRows.length;$('fallback-add-toggle').setAttribute('aria-expanded',String(fallbackAvailableExpanded));$('fallback-add-toggle').textContent=fallbackAvailableExpanded?'收起可选模型':'＋ 添加模型';$('fallback-available').hidden=!fallbackAvailableExpanded;
-  $('fallback-status').textContent=(!online?'服务已断开 · 仅查看':fallbackSaving?'保存中…':candidateIndex+' 个候补 · '+(Array.isArray(settings.models)?'已保存顺序':'默认顺序'))+' · '+(kind==='text'?'文字':'生图');
+  $('fallback-status').textContent=(!online?'服务已断开 · 仅查看':fallbackSaving?'保存中…':candidateIndex+' 个模型 · '+(Array.isArray(settings.models)?'已保存顺序':'默认顺序'))+' · '+(kind==='text'?'文字':'生图')+(global?' · 全局':'');
 }
 async function saveFallbackSettings(value){
   if(fallbackSaving)return;
-  const {owner,kind}=fallbackView();if(!owner)return;
+  const {owner,kind,global}=fallbackView();if(!owner&&!global)return;
   if(!online||!snapshot.service?.features?.quota_failover)return;
-  const cid=owner.id;fallbackSaving=true;renderFallbackSettings();
+  const cid=owner?.id;
+  if(global){
+    const version=snapshot.global_model_policy_version||0;fallbackSaving=true;renderFallbackSettings();
+    try{const saved=await api('/api/global-model-policy',{kind,settings:value,version});
+      if(!saved.global_model_policy?.[kind]||saved.global_model_policy_version!==version+1)throw Error('全局设置返回不匹配');
+      Object.assign(snapshot,saved);await refresh();
+    }catch(e){toast('全局智能选择未保存：'+e.message);await refresh();}
+    finally{fallbackSaving=false;render();}
+    return;
+  }
+  fallbackSaving=true;renderFallbackSettings();
   try{const saved=await api('/api/conversations/'+cid+'/fallback',{kind,settings:value});
     if(saved.id!==cid)throw Error('窗口不匹配');
     const current=conversationMeta(cid);if(current)Object.assign(current,saved);
@@ -347,15 +363,16 @@ function stageGlobalEffort(model){
 }
 function scopedModelValue(conv,kind){return Object.hasOwn(conv?.model_preferences||{},kind)?conv.model_preferences[kind]:'__global__';}
 function currentModelKind(){return $('task-kind').value==='image'?'image':'text';}
+function globalModelPreference(kind){return Object.hasOwn(snapshot.global_model_policy||{},kind)?'':snapshot.preferred_model||'';}
 function composerModelResolution(){
   if(!snapshot.service?.features?.model_resolution)return null;
   const conv=typeof composerConversation==='function'?composerConversation():null,kind=currentModelKind(),value=conv?conv.model_resolution?.[kind]:snapshot.model_resolution?.[kind];
-  const preferences=conv?.model_preferences||{},wanted=Object.hasOwn(preferences,kind)?preferences[kind]:snapshot.preferred_model||'';
+  const preferences=conv?.model_preferences||{},wanted=Object.hasOwn(preferences,kind)?preferences[kind]:globalModelPreference(kind);
   const effective=value?.effective_model;
   if(value?.automatic&&effective&&((snapshot.blocked_models||[]).includes(effective)||quotaForModel(effective,snapshot.health||{}).exhausted))return null;
   return value&&value.requested_model===(wanted||'')?value:null;
 }
-function effectiveComposerModel(health){const resolution=composerModelResolution();if(resolution)return resolution.effective_model||resolution.requested_model;const selected=$('model').value;return selected==='__global__'?(snapshot.preferred_model||availableQuotaModel(health)||''):selected||availableQuotaModel(health)||'';}
+function effectiveComposerModel(health){const resolution=composerModelResolution();if(resolution)return resolution.effective_model||resolution.requested_model;const selected=$('model').value;if(selected==='__global__'&&Object.hasOwn(snapshot.global_model_policy||{},currentModelKind()))return '';return selected==='__global__'?(snapshot.preferred_model||availableQuotaModel(health)||''):selected||availableQuotaModel(health)||'';}
 const modelEffortLabels={minimal:'Minimal · 轻量',low:'Low · 轻量',medium:'Medium · 均衡',high:'High · 深入',xhigh:'XHigh · 更深入',max:'Max · 最深入'};
 function modelParts(model){
   const match=String(model.label||'').match(/^(.*?)\s*\((Minimal|Low|Medium|High|XHigh|Max)\)$/i);
@@ -370,7 +387,7 @@ function splitModelSelection(sourceId,familyId,speedId){
   const source=$(sourceId),family=$(familyId),speed=$(speedId);if(!source||!family||!speed)return;
   const models=orderedModels(snapshot.health?.models||[],uiSettings.modelOrder),groups=modelFamilies(models),selected=source.value;
   const group=groups.find(g=>g.variants.some(m=>m.id===selected));
-  const specials=[...source.options].filter(o=>!models.some(m=>m.id===o.value)).map(o=>({value:o.value,label:o.value==='__global__'?'沿用全局':o.value===''?'智能选择':o.text,disabled:o.disabled}));
+  const specials=[...source.options].filter(o=>!models.some(m=>m.id===o.value)).map(o=>({value:o.value,label:o.value===''?'智能选择':o.text,disabled:o.disabled}));
   const available=id=>[...source.options].some(o=>o.value===id&&!o.disabled);
   const options=[...specials,...groups.map(g=>({value:'family:'+g.key,label:g.label,disabled:!g.variants.some(m=>available(m.id))}))];
   const html=options.map(o=>`<option value="${escape(o.value)}"${o.disabled?' disabled':''}>${escape(o.label)}</option>`).join('');
@@ -401,8 +418,11 @@ function syncComposerModelPickers(){splitModelSelection('model','model-family','
 function renderModelSelection(health,conv){
   if(snapshot.service?.features?.window_models){
     const target=typeof composerConversation==='function'?composerConversation():conv,kind=currentModelKind(),wanted=scopedModelValue(target,kind),models=orderedModels(health.models||[],uiSettings.modelOrder);
-    const globalLabel=models.find(m=>m.id===snapshot.preferred_model)?.label||snapshot.preferred_model||'智能选择';
-    const options=[{id:'__global__',label:'沿用全局 · '+globalLabel},{id:'',label:'本窗口智能选择'},...models];
+    const inherited=wanted==='__global__'?(target?.model_resolution?.[kind]||snapshot.model_resolution?.[kind]):snapshot.model_resolution?.[kind];
+    const resolution=inherited?.requested_model===globalModelPreference(kind)?inherited:null,effective=resolution?.effective_model,resolvedModel=models.find(m=>m.id===effective);
+    const usable=resolvedModel&&!(snapshot.blocked_models||[]).includes(effective)&&!quotaForModel(effective,health).exhausted;
+    const globalLabel=usable?modelParts(resolvedModel).label:resolution&&!health.checking?'暂无可用模型':'待确认';
+    const options=[{id:'__global__',label:'沿用全局（'+globalLabel+'）'},{id:'',label:'本窗口智能选择'},...models];
     if(wanted&&wanted!=='__global__'&&!models.some(m=>m.id===wanted))options.push({id:wanted,label:wanted+'（暂不可用）',disabled:true});
     const html=options.map(m=>`<option value="${escape(m.id)}"${m.disabled?' disabled':''}>${escape(m.label)}</option>`).join('');
     if($('model').dataset.options!==html){$('model').innerHTML=html;$('model').dataset.options=html;}
@@ -570,7 +590,7 @@ function renderAccount(){
   $('account-toggle').setAttribute('aria-label',showAccount?'隐藏账号与额度':'查看 CLI 账号与额度');
   $('account-toggle').setAttribute('aria-expanded',String(showAccount));
   if(!showAccount)return;
-  const account=snapshot.health.account||{},identity=account.email||account.name||'',checking=account.state==='checking'||accountRefreshPending,stamp=accountCheckedLabel(account.checked_at),age=stamp?Date.now()-new Date(account.checked_at).getTime():Infinity;
+  const account=snapshot.health.account||{},identity=account.email||account.name||'',checking=account.state==='checking'||snapshot.health.account_syncing||accountRefreshPending,stamp=accountCheckedLabel(account.checked_at),age=stamp?Date.now()-new Date(account.checked_at).getTime():Infinity;
   const known=account.state==='known'&&!!identity,apiKey=account.state==='api_key',stale=(known||apiKey)&&age>300000;
   let label='身份尚未核实',state='未核实',tone='unknown';
   if(!online){label=identity||(apiKey?'API key 模式':'身份尚未核实');state='服务断开 · 上次记录';tone='offline';}
@@ -586,14 +606,36 @@ function renderAccount(){
   $('account-source').textContent='来源：'+(account.source||'CLI 身份检查');
   $('account-checked').textContent=stamp?'更新 '+stamp:'尚未核对';
   $('account-checked').dateTime=stamp?account.checked_at:'';
-  $('account-refresh').disabled=!online||checking;
+  $('account-refresh').disabled=!online||checking||!!snapshot.service?.active_tasks;
   if($('account-switch'))$('account-switch').disabled=!online||checking||!!snapshot.service?.active_tasks||!snapshot.service?.features?.account_switch;
-  if($('account-switch'))$('account-switch').dataset.tooltip=snapshot.service?.active_tasks?'请等待所有任务结束后切换账号':'打开 CC Switch，切换后刷新账号';
-  $('account-refresh').textContent=checking?'读取中…':'刷新 ↻';
+  if($('account-switch'))$('account-switch').dataset.tooltip=snapshot.service?.active_tasks?'请等待所有任务结束后切换账号':'在 CC Switch 选择账号，返回后自动同步';
+  $('account-refresh').textContent=checking?'读取中…':'同步 ↻';
+  $('account-note').textContent=accountReturnSync.armed?(accountReturnSync.ready?'等待空闲后同步账号与模型':'在 CC Switch 选择账号，返回后自动同步'):(snapshot.health.account_sync_result?.detail||'账号由官方 CLI 共享 · 时间为北京时间');
   const detail=account.detail||(!known&&!apiKey&&!checking&&online?'账号尚未确认，可点击“刷新”检查。':'');
   $('account-detail').textContent=detail;$('account-detail').hidden=!detail||(known&&!checking&&online);
   renderQuota(account,checking);
   positionAccountPanel();
+}
+function armAccountReturnSync(){accountReturnSync={armed:true,departed:false,ready:false,opening:true,pending:false};}
+function accountReturnDeparted(){if(accountReturnSync.armed)accountReturnSync.departed=true;}
+function accountReturnFocused(resume=true){if(accountReturnSync.armed&&accountReturnSync.departed&&!accountReturnSync.ready&&!document.hidden){accountReturnSync.ready=true;if(resume)startPolling();}}
+function accountReturnInteracted(event){
+  const state=accountReturnSync;
+  if(!event.isTrusted||!state.armed||state.opening||state.pending||state.ready||document.hidden||event.type==='pointerdown'&&event.button!==0)return;
+  if(event.target?.closest?.('#account-switch,#panel-action-submit,#account-refresh,.composer'))return;
+  state.ready=true;startPolling();
+}
+async function syncReturnedAccount(){
+  const state=accountReturnSync;
+  if(!state.armed||!state.ready||state.opening||state.pending||document.hidden||!online||snapshot.service?.active_tasks||snapshot.service?.checking_processes||snapshot.health?.checking||snapshot.health?.account?.state==='checking')return;
+  state.pending=true;state.armed=false;
+  try{
+    if(!snapshot.service?.features?.account_sync){toast('当前后台尚不支持自动同步，请更新后使用“同步”。');return;}
+    await api('/api/account/sync',{});toast('正在同步 CLI 账号与模型');
+  }catch(error){
+    if(error.status===409){state.armed=true;return;}
+    toast('自动同步未确认，请点“同步”核对账号与模型。');
+  }finally{state.pending=false;renderAccount();}
 }
 function toast(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,3200);}
 async function api(path,body){const isState=path.split('?')[0]==='/api/state'&&body===undefined,options=body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Console-Token':token},body:JSON.stringify(body)};if(isState&&stateETag)options.headers={'If-None-Match':stateETag};const res=await fetch(path,options);if(isState&&res.status===304)return null;const data=await res.json();if(!res.ok)throw Object.assign(new Error(data.error||'请求失败'),{status:res.status});if(isState)stateETag=res.headers.get('ETag');return data;}
@@ -666,7 +708,8 @@ function clearSubmittedDraft(key,text){
 }
 function rememberFixedOwner(conv){if(conv?.codex_thread_id&&!sessionStorage.getItem('agy-codex-owner'))sessionStorage.setItem('agy-codex-owner',conv.codex_thread_id);}
 function boundActivityTarget(){
-  if(typeof focusedMeetingID==='function'&&focusedMeetingID(typeof active==='function'?active():null))return null;
+  const reading=typeof active==='function'?active():null,focus=typeof focusedMeetingID==='function'?focusedMeetingID(reading):null;
+  if(focus&&(typeof automaticMeetingFocusByPage==='undefined'||!automaticMeetingFocusByPage.has(pageCacheKey(reading.id))))return null;
   const conv=fixedOwnerConversation();if(!conv){boundActivityPending=null;return null;}
   const owner=conv.codex_thread_id,latest=conv.turns.at(-1)?.id||null;
   if(boundActivityCursor?.owner!==owner){
@@ -681,16 +724,23 @@ function boundActivityTarget(){
     try{sessionStorage.setItem('agy-bound-activity-v1',JSON.stringify({owner,turnId:latest}));}catch(e){}
   }
   if(conv.auto_open_activity===false){boundActivityPending=null;return null;}
+  if(focus){
+    if(newTask&&targetTurn?.meeting_id){if(boundActivityPending?.exitMeeting)boundActivityPending=null;return null;}
+    if(newTask&&!targetTurn?.meeting_id)boundActivityPending={owner,id:conv.id,branch:targetTurn?.branch||conv.primary_branch||null,exitMeeting:focus};
+    if(!boundActivityPending?.exitMeeting)return null;
+    if(typeof meetingActivityBlocked==='function'&&meetingActivityBlocked())return null;
+    setMeetingFocus(null,true,'bottom');
+  }
   if(newTask)boundActivityPending={owner,id:conv.id,branch:targetTurn?.branch||conv.primary_branch||null};
   if(!boundActivityPending)return null;
   // Already reading this chat: retain its history page and scroll position.
   if(viewMode==='panel'&&activeId===conv.id&&(!boundActivityPending.branch||selectedBranch(conv)===boundActivityPending.branch)){boundActivityPending=null;return null;}
   // Resume through the existing state poll after input or a dialog is finished.
   if(viewMode==='panel'&&conversationPages.get(pageCacheKey(activeId))?.value?.page?.has_newer)return null;
-  if(document.hidden||submitting||bulkMode||openSelectId||!$('history-menu')?.hidden||$('prompt').value.trim()||['history-dialog','bulk-dialog','image-preview','session-dialog','related-dialog','collaboration-audit-dialog','task-queue-dialog','settings-dialog','panel-action-dialog','meeting-action-dialog','fulltext-dialog','backup-dialog','software-update-dialog','config-import-dialog'].some(id=>$(id)?.open))return null;
+  if(document.hidden||submitting||bulkMode||openSelectId||(typeof sessionMenuScope!=='undefined'&&sessionMenuScope)||!$('history-menu')?.hidden||$('prompt').value.trim()||['history-dialog','bulk-dialog','image-preview','session-dialog','related-dialog','collaboration-audit-dialog','task-queue-dialog','settings-dialog','panel-action-dialog','meeting-action-dialog','fulltext-dialog','backup-dialog','software-update-dialog','config-import-dialog'].some(id=>$(id)?.open))return null;
   const target=boundActivityPending.id;nextFollowBranch=boundActivityPending.branch;boundActivityPending=null;return target;
 }
-function followBoundActivity(){const id=boundActivityTarget();if(!id)return false;selectConversation(id,nextFollowBranch);toast('已进入绑定聊天的新任务');return true;}
+function followBoundActivity(){if(typeof followRoundtableActivity==='function'){if(followRoundtableActivity())return true;if(typeof meetingActivityPending!=='undefined'&&meetingActivityPending)return false;}const id=boundActivityTarget();if(!id)return false;selectConversation(id,nextFollowBranch);toast('已进入绑定聊天的新任务');return true;}
 function clearCodePrefix(prefix){if(prefix)for(const key of codeCopies.keys())if(key.startsWith(prefix+'-'))codeCopies.delete(key);}
 function clearMessageRows(){$('messages').replaceChildren();renderedMessageRows.clear();renderedMessageView='';codeCopies.clear();}
 function syncMessageRows(view,rows){
@@ -769,21 +819,72 @@ function roundtableMeetings(conv){
   });
 }
 const meetingFocusByPage=new Map();
+const automaticMeetingFocusByPage=new Set();
 function focusedMeetingID(conv){if(!conv?.id)return null;const id=meetingFocusByPage.get(pageCacheKey(conv.id));return id&&roundtableMeetings(conv).some(item=>item.id===id)?id:null;}
-function setMeetingFocus(meetingId=null){
+function setMeetingFocus(meetingId=null,automatic=false,scroll='top'){
   const conv=active(),key=pageCacheKey(conv?.id);if(!conv?.id)return;
   if(meetingId){const state=meetingPagingState(conv);if(!state.shown.some(item=>item.id===meetingId)||!state.entry)return;state.entry.meetingHistory=state.entry.meetingHistory||{meetings:state.shown,hasOlder:state.older};meetingFocusByPage.delete(key);meetingFocusByPage.set(key,meetingId);while(meetingFocusByPage.size>64)meetingFocusByPage.delete(meetingFocusByPage.keys().next().value);}
   else meetingFocusByPage.delete(key);
-  const entry=conversationPages.get(key);if(entry)entry.scroll='top';render();
+  if(meetingId&&automatic)automaticMeetingFocusByPage.add(key);else automaticMeetingFocusByPage.delete(key);
+  for(const saved of automaticMeetingFocusByPage)if(!meetingFocusByPage.has(saved))automaticMeetingFocusByPage.delete(saved);
+  if(!automatic&&typeof dismissMeetingActivity==='function')dismissMeetingActivity(conv);
+  if(typeof history!=='undefined'&&typeof setViewAddress==='function'&&conv.codex_thread_id){const params={codex:conv.codex_thread_id},branch=selectedBranch(conv);if(branch&&branch!==conv.primary_branch)params.session=branch;if(meetingId)params.meeting=meetingId;setViewAddress(params);}
+  const entry=conversationPages.get(key);if(entry)entry.scroll=scroll;render();
 }
 function filterFocusedMeetingRows(conv,rows){const id=focusedMeetingID(conv);if(id)rows.splice(0,rows.length,...rows.filter(row=>row.key==='meeting:'+id));}
 function meetingLinkedTurnIDs(meetings){return new Set(meetings.flatMap(meeting=>meeting.slots.filter(slot=>slot.provider==='agy'&&slot.turn_id).map(slot=>slot.turn_id)));}
+function protectMeetingReading(event){
+  if(!event.isTrusted||viewMode!=='panel'||event.type==='keydown'&&!['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(event.key)||event.type==='pointerdown'&&event.target!==$('conversation'))return;
+  const conv=active(),key=pageCacheKey(conv?.id);if(!focusedMeetingID(conv)||!automaticMeetingFocusByPage.has(key))return;
+  automaticMeetingFocusByPage.delete(key);dismissMeetingActivity(conv);
+}
+let meetingActivityCursor=null,meetingActivityPending=null,meetingActivityRequest=null;
+function dismissMeetingActivity(conv){if(meetingActivityPending?.owner===conv?.codex_thread_id)meetingActivityPending=null;if(typeof requestedMeetingId!=='undefined')requestedMeetingId=null;}
+function meetingActivityBlocked(allowDraft=false){return document.hidden||submitting||bulkMode||openSelectId||(typeof sessionMenuScope!=='undefined'&&sessionMenuScope)||!$('history-menu')?.hidden||!allowDraft&&$('prompt').value.trim()||['history-dialog','bulk-dialog','image-preview','session-dialog','related-dialog','collaboration-audit-dialog','task-queue-dialog','settings-dialog','panel-action-dialog','meeting-action-dialog','fulltext-dialog','backup-dialog','software-update-dialog','config-import-dialog'].some(id=>$(id)?.open);}
+function meetingActivityRecords(conv){return (Array.isArray(conv?.meeting_summaries)?conv.meeting_summaries:[]).filter(item=>/^[a-f0-9]{32}$/.test(item?.id||'')&&item.codex_thread_id===conv.codex_thread_id&&/^[a-z][a-z0-9_-]{0,39}$/.test(item.branch||'')&&['active','completed','partial','cancelled'].includes(item.status));}
+function loadMeetingActivityRecord(conv,target,entry){
+  if(meetingActivityRequest||target.fetchStarted)return;
+  target.fetchStarted=true;const key=pageCacheKey(conv.id),intent=conversationIntents.get(key)||0,token={target};meetingActivityRequest=token;
+  Promise.resolve().then(async()=>{
+    try{
+      const value=await api('/api/conversations/'+conv.id+'/meetings/'+target.meeting+'?'+new URLSearchParams({branch:target.branch}));
+      if(meetingActivityRequest!==token||meetingActivityPending!==target||viewMode!=='panel'||activeId!==conv.id||pageCacheKey(activeId)!==key||(conversationIntents.get(key)||0)!==intent){if(meetingActivityPending===target)meetingActivityPending=null;return;}
+      if(!roundtableMeetings({codex_thread_id:target.owner,page:{branch:target.branch},roundtable_meetings:[value]}).some(item=>item.id===target.meeting))throw new Error('圆桌链接与当前聊天不匹配');
+      const current=conversationPages.get(key);if(current!==entry||current.loading){if(meetingActivityPending===target)meetingActivityPending=null;return;}
+      const meetings=[...roundtableMeetings(current.value).filter(item=>item.id!==value.id).slice(-19),value];current.value={...current.value,roundtable_meetings:meetings};current.meetingHistory={meetings,hasOlder:meetingPagingState(current.value).older};
+    }catch(error){if(meetingActivityPending===target){meetingActivityPending=null;if(typeof requestedMeetingId!=='undefined')requestedMeetingId=null;toast(error.message||'这场圆桌暂时无法载入，原会话已保留');}}
+    finally{if(meetingActivityRequest===token)meetingActivityRequest=null;if(viewMode==='panel'&&activeId===conv.id){if(!followRoundtableActivity())render();}}
+  });
+}
+function followRoundtableActivity(){
+  const conv=fixedOwnerConversation();if(!conv)return false;
+  const owner=conv.codex_thread_id,records=meetingActivityRecords(conv),latest=records.at(-1)||null;
+  if(meetingActivityCursor?.owner!==owner){let saved=null;try{saved=JSON.parse(sessionStorage.getItem('agy-bound-meeting-v1')||'null');}catch(e){}const valid=saved?.owner===owner&&(saved.meetingId===null||/^[a-f0-9]{32}$/.test(saved.meetingId||''));meetingActivityCursor={owner,ready:valid,meetingId:valid?saved.meetingId:null};meetingActivityPending=null;}
+  const cursor=meetingActivityCursor,newMeeting=cursor.ready?!!latest&&latest.id!==cursor.meetingId:latest?.status==='active';
+  if(!cursor.ready||cursor.meetingId!==(latest?.id||null)){cursor.ready=true;cursor.meetingId=latest?.id||null;try{sessionStorage.setItem('agy-bound-meeting-v1',JSON.stringify({owner,meetingId:cursor.meetingId}));}catch(e){}}
+  const requested=typeof requestedMeetingId==='string'?requestedMeetingId:null;
+  if(requested){const exact=records.find(item=>item.id===requested);if(!exact||exact.branch!==selectedBranch(conv)){requestedMeetingId=null;meetingActivityPending=null;toast('这场圆桌不属于当前聊天或工作会话，原会话已保留');return false;}meetingActivityPending={owner,id:conv.id,branch:exact.branch,meeting:exact.id,explicit:true};requestedMeetingId=null;}
+  else if(conv.auto_open_activity===false){meetingActivityPending=null;return false;}
+  else if(newMeeting&&!meetingActivityPending)meetingActivityPending={owner,id:conv.id,branch:latest.branch,meeting:latest.id,explicit:false};
+  const target=meetingActivityPending;if(!target)return false;
+  const current=typeof active==='function'?active():null,entry=conversationPages.get(pageCacheKey(activeId));
+  const focus=focusedMeetingID(current);if(focus&&(focus===target.meeting||!automaticMeetingFocusByPage.has(pageCacheKey(current.id)))){meetingActivityPending=null;return false;}
+  if(viewMode==='panel'&&(entry?.params?.before||entry?.params?.after||entry?.params?.around||entry?.value?.page?.has_newer||!target.explicit&&entry?.meetingHistory?.selectedOlder)){meetingActivityPending=null;return false;}
+  const restoreHere=target.explicit&&viewMode==='panel'&&activeId===target.id&&selectedBranch(conv)===target.branch;
+  if(meetingActivityBlocked(restoreHere))return false;
+  if(viewMode!=='panel'||activeId!==target.id||selectedBranch(conv)!==target.branch){selectConversation(target.id,target.branch);return true;}
+  if(!current||current.summary||entry?.loading)return false;
+  if(roundtableMeetings(current).some(item=>item.id===target.meeting)){meetingActivityPending=null;setMeetingFocus(target.meeting,true);return true;}
+  if(entry)loadMeetingActivityRecord(conv,target,entry);
+  return false;
+}
 function pruneConversationPages(){
   for(const key of conversationPages.keys())if(!conversationMeta(key.split(':')[0])&&!conversationRequests.has(key))conversationPages.delete(key);
   for(const key of conversationPages.keys()){if(conversationPages.size<=2)break;if(key!==pageCacheKey(activeId)&&!conversationRequests.has(key))conversationPages.delete(key);}
 }
 function loadConversationPage(id,params={},manual=false,intent=null){
   if(!id||!conversationMeta(id))return Promise.resolve(null);
+  if(manual&&(params.before||params.after||params.around)&&typeof dismissMeetingActivity==='function')dismissMeetingActivity(conversationMeta(id));
   const branch=selectedBranch(conversationMeta(id));if(sessionGroups()&&!params.branch&&branch)params={...params,branch};
   const key=pageCacheKey(id,params);
   if(intent===null){intent=(conversationIntents.get(key)||0)+(manual?1:0);if(manual)conversationIntents.set(key,intent);}
@@ -816,7 +917,13 @@ function loadConversationPage(id,params={},manual=false,intent=null){
       }
       entry.value=value;entry.tag=tag;if(manual)entry.scroll=params.around?'turn:'+params.around+':'+(params.matchRole==='user'?'user':'assistant'):params.before||params.after?'top':'bottom';
     }catch(error){if(intent===(conversationIntents.get(key)||0)){entry.error=error.message||'暂时无法载入这页对话。';entry.retryAt=Date.now()+5000;}}
-    finally{entry.loading=false;conversationRequests.delete(key);pruneConversationPages();if(viewMode==='panel'&&pageCacheKey(activeId)===key&&intent===(conversationIntents.get(key)||0))render();}
+    finally{
+      entry.loading=false;conversationRequests.delete(key);pruneConversationPages();
+      if(viewMode==='panel'&&activeId===id&&pageCacheKey(activeId)===key&&conversationPages.get(key)===entry&&intent===(conversationIntents.get(key)||0)){
+        const explicitMeeting=typeof requestedMeetingId==='string'&&requestedMeetingId||typeof meetingActivityPending!=='undefined'&&meetingActivityPending?.explicit&&meetingActivityPending.id===id&&meetingActivityPending.branch===(params.branch||entry.value?.page?.branch);
+        if(entry.error||!explicitMeeting||typeof followRoundtableActivity!=='function'||!followRoundtableActivity())render();
+      }
+    }
     return entry;
   });
   conversationRequests.set(key,task);pruneConversationPages();if(viewMode==='panel'&&pageCacheKey(activeId)===key)render();return task;
@@ -861,7 +968,7 @@ async function loadOlderMeetings(){
     const values=Array.isArray(result?.meetings)?result.meetings:[],validated=roundtableMeetings({codex_thread_id:thread,page:{branch},roundtable_meetings:values});
     if(!Array.isArray(result?.meetings)||validated.length!==values.length||values.length>10||typeof result.has_older!=='boolean'||!Number.isInteger(result.total)||result.total<state.shown.length||values.length&&result.first_id!==values[0].id||result.has_older&&!values.length)throw new Error('圆桌分页返回不匹配，原记录未替换。');
     const shown=roundtableMeetings(entry.value),ids=new Set(shown.map(item=>item.id));if(values.some(item=>ids.has(item.id)))throw new Error('圆桌分页位置已变化，请回到最近圆桌。');
-    const combined=[...values,...shown].slice(0,20);entry.meetingHistory={meetings:combined,hasOlder:result.has_older};entry.value={...entry.value,roundtable_meetings:combined,meeting_count:result.total};entry.meetingError='';entry.scroll='top';
+    const combined=[...values,...shown].slice(0,20);entry.meetingHistory={meetings:combined,hasOlder:result.has_older,selectedOlder:true};entry.value={...entry.value,roundtable_meetings:combined,meeting_count:result.total};entry.meetingError='';entry.scroll='top';
   }catch(error){const entry=current();if(entry)entry.meetingError=error.message||'较早圆桌暂时无法载入，可再次点击重试。';}
   finally{const entry=conversationPages.get(key);if(entry?.meetingRequest===token)delete entry.meetingRequest;if(viewMode==='panel'&&activeId===cid&&pageCacheKey(activeId)===key)render();}
 }
@@ -1070,13 +1177,68 @@ async function setAutoOpenPreference(conv,enabled){
   }catch(error){toast((saved?'设置已保存，暂未同步最新状态：':'自动打开设置未保存：')+error.message);}
   finally{autoOpenPending=false;renderSettings();}
 }
+let sessionMenuScope=null,sessionExportPending=false,sessionExportURL=null;
+function sessionActionScope(){
+  if(viewMode!=='panel'||!online)return null;
+  const conv=active(),branch=selectedBranch(conv);
+  return conv?.id&&branch?{cid:conv.id,branch,meeting:focusedMeetingID(conv),codex:conv.codex_thread_id||null,title:conv.branches?.[branch]?.title||conv.title||'会话',entryTitle:conv.title||'会话'}:null;
+}
+function closeSessionMenu(focus=false){
+  sessionMenuScope=null;$('session-actions-menu').hidden=true;$('session-rename').setAttribute('aria-expanded','false');
+  if(focus)$('session-rename').focus();
+}
+function renameSessionTab(event){
+  const tab=event.target.closest('[data-session-open]'),conv=conversationMeta(activeId),branch=tab?.dataset.sessionOpen;
+  if(!online||viewMode!=='panel'||!conv?.branches?.[branch])return;
+  event.preventDefault();closeSessionMenu();
+  if(selectedBranch(conv)!==branch)selectConversation(conv.id,branch);
+  openSessionDialog('rename');
+}
+function renderSessionMenu(){
+  if(!sessionMenuScope)return;
+  const current=sessionActionScope(),scope=sessionMenuScope;
+  if(!current||current.cid!==scope.cid||current.branch!==scope.branch||current.meeting!==scope.meeting){closeSessionMenu();return;}
+  $('session-export').disabled=sessionExportPending;
+  $('session-export-all').disabled=sessionExportPending;
+  $('session-export-meeting').hidden=!scope.meeting;$('session-export-meeting').disabled=sessionExportPending;
+}
+function openSessionMenu(focus=false){
+  const scope=sessionActionScope();if(!scope)return;
+  closeSelectMenu();closeHistoryMenu();hideQuickTooltip();sessionMenuScope=scope;
+  const menu=$('session-actions-menu');menu.hidden=false;menu.style.setProperty('--session-menu-shift','0px');
+  $('session-rename').setAttribute('aria-expanded','true');renderSessionMenu();
+  const rect=menu.getBoundingClientRect(),left=Math.max(8,Math.min(rect.left,window.innerWidth-rect.width-8));
+  menu.style.setProperty('--session-menu-shift',(left-rect.left)+'px');
+  if(focus)$('session-export').focus();
+}
+function transcriptFilename(header,title){
+  let name='';const encoded=/filename\*=UTF-8''([^;]+)/i.exec(header||''),plain=/filename="([^"]+)"/i.exec(header||'');
+  try{name=encoded?decodeURIComponent(encoded[1]):plain?.[1]||'';}catch(error){}
+  name=String(name||title||'会话').replace(/[\x00-\x1f\x7f<>:"/\\|?*]/g,'_').replace(/^[.\s]+|[.\s]+$/g,'').slice(0,160)||'会话';
+  return /\.md$/i.test(name)?name:name+'.md';
+}
+async function exportSessionMarkdown(scope=sessionActionScope(),meetingOnly=false,allSessions=false){
+  if(sessionExportPending||!scope||!online||meetingOnly&&!scope.meeting)return;
+  sessionExportPending=true;closeSessionMenu();
+  const query=new URLSearchParams({...(!allSessions?{branch:scope.branch}:{}),...(scope.codex?{codex:scope.codex}:{}),...(meetingOnly?{meeting:scope.meeting}:{})});
+  try{
+    const response=await fetch('/api/conversations/'+encodeURIComponent(scope.cid)+'/export?'+query);
+    if(!response.ok){let message='导出失败，请稍后重试';try{message=(await response.json()).error||message;}catch(error){}throw new Error(message);}
+    if(!(response.headers.get('Content-Type')||'').toLowerCase().startsWith('text/markdown'))throw new Error('服务返回的文件格式不正确，请重载控制台后重试');
+    const blob=await response.blob();if(sessionExportURL)URL.revokeObjectURL(sessionExportURL);sessionExportURL=URL.createObjectURL(blob);
+    const link=$('session-export-download');link.href=sessionExportURL;link.download=transcriptFilename(response.headers.get('Content-Disposition'),(allSessions?scope.entryTitle+' - 全部会话':scope.title)+(meetingOnly?' - 圆桌':''));link.click();
+    toast(meetingOnly?'本场圆桌 Markdown 已生成':allSessions?'本固定入口所有会话 Markdown 已生成':'当前会话完整 Markdown 已生成');
+  }catch(error){toast('未导出：'+error.message);}
+  finally{sessionExportPending=false;renderSessionMenu();}
+}
 function renderSessions(){
+  renderSessionMenu();
   const conv=conversationMeta(activeId),branches=Object.values(conv?.branches||{}),show=sessionGroups()&&viewMode==='panel'&&(branches.length>0||!!conv?.codex_thread_id);
   $('session-toolbar').hidden=!show;$('session-related-list').hidden=!show||!relatedExpanded;
   renderCollaborationControl(show?conv:null);
   $('collaboration-records').hidden=!show||!conv?.codex_thread_id;$('collaboration-records').disabled=!online;
   if(!show)return;
-  const chosen=selectedBranch(conv),tabs=branches.map(b=>`<button type="button" role="tab" aria-selected="${b.id===chosen}" data-session-open="${escape(b.id)}" data-tooltip="${escape(b.title)}${b.id===conv.primary_branch?' · 默认会话':''} · ${Number(b.turn_count||0)}轮">${b.busy_count?'<span class="session-busy">●</span>':''}${escape(b.title)}</button>`).join('');
+  const chosen=selectedBranch(conv),tabs=branches.map(b=>`<button type="button" role="tab" aria-selected="${b.id===chosen}" data-session-open="${escape(b.id)}" data-tooltip="${escape(b.title)}${b.id===conv.primary_branch?' · 默认会话':''} · ${Number(b.turn_count||0)}轮 · 双击重命名">${b.busy_count?'<span class="session-busy">●</span>':''}${escape(b.title)}</button>`).join('');
   if($('session-tabs').innerHTML!==tabs)$('session-tabs').innerHTML=tabs;
   $('session-add').disabled=!online||submitting;$('session-rename').disabled=!online||!chosen;
   const current=conv.branches?.[chosen],related=activityState.sessions.filter(s=>s.related&&s.owner_conversation_id===conv.id&&(!chosen||s.owner_branch===chosen)||current?.adopted&&s.id===current.agy_id);
@@ -1541,9 +1703,20 @@ function meetingRoundHTML(meeting,stage,number,label){
   if(stage!=='summary')return `<details class="meeting-round meeting-round-fold" data-meeting-disclosure="${escape(meeting.id)}" data-meeting-part="round:${stage}"${meetingDisclosureOpen(meeting.id,'round:'+stage,!ended)?' open':''}><summary>${heading}</summary><div class="meeting-round-slots">${slots.map(slot=>meetingSlotHTML(meeting,slot)).join('')}</div></details>`;
   return `<section class="meeting-round meeting-summary${ended?' meeting-summary--ready':''}"><h3>${heading}</h3><div class="meeting-round-slots">${slots.map(slot=>meetingSlotHTML(meeting,slot)).join('')}</div></section>`;
 }
+function meetingRosterHTML(meeting){
+  const names={codex:'Codex',agy:'Agy',muse:'Muse',claude:'Claude'},labels={pending:'待组织',sending:'发送待核对',waiting:'等待回复',queued:'排队',running:'处理中',cancelling:'正在停止',completed:'已回复',failed:'失败',unavailable:'缺席',cancelled:'已取消',interrupted:'已中断',unknown:'待核对'},stageNames={proposal:'提案',review:'互评',summary:'总结'},host=meeting.host||meeting.roundtable?.host;
+  const priority=['failed','interrupted','unknown','unavailable','cancelled','cancelling','sending','running','queued','waiting','pending','completed'];
+  const members=meeting.participants.filter(provider=>Object.hasOwn(names,provider)).map(provider=>{
+    const current=meeting.status==='active'&&Object.hasOwn(stageNames,meeting.phase),stages=current&&!(meeting.phase==='summary'&&provider!==host)?[meeting.phase]:provider===host&&meeting.status!=='active'?['proposal','review','summary']:['proposal','review'];
+    const states=stages.map(stage=>{const found=meeting.slots.find(slot=>slot.provider===provider&&slot.stage===stage),status=found&&Object.hasOwn(labels,found.status)?found.status:'unknown';return {stage,status};});
+    const status=priority.find(candidate=>states.some(item=>item.status===candidate))||'unknown',detail=names[provider]+'：'+states.map(item=>stageNames[item.stage]+labels[item.status]).join('；');
+    return `<span class="meeting-roster-member meeting-roster-member--${status}" role="listitem" data-roster-provider="${provider}" aria-label="${escape(detail)}"><strong>${names[provider]}</strong><span class="meeting-roster-status">${labels[status]}</span></span>`;
+  });
+  return '<div class="meeting-roster" role="list" aria-label="本场参与状态">'+members.join('')+'</div>';
+}
 function panelMeetingHTML(meeting){
   const host=meeting.host||meeting.roundtable?.host,names={codex:'Codex',agy:'Agy',muse:'Muse',claude:'Claude'},states={active:'进行中',completed:'已完成',partial:'部分完成',cancelled:'已取消'},phases={proposal:'第一轮提案',review:'第二轮互评',summary:'主持总结',finished:'本场已结束'},summary=meeting.slots.find(slot=>slot.stage==='summary'),summaryFirst=summary?.status==='completed',stages=summaryFirst?[['summary','03','主持结论'],['proposal','01','独立提案'],['review','02','互评']]:[['proposal','01','独立提案'],['review','02','互评'],['summary','03','主持总结']];
-  return `<article class="message meeting-card" data-meeting-id="${escape(meeting.id)}"><header class="meeting-heading"><div><span class="meeting-eyebrow">圆桌会议 · 主持 ${names[host]}</span><h2>${escape(meeting.topic)}</h2></div><div class="meeting-heading-actions"><span class="meeting-state meeting-state--${escape(meeting.status)}">${states[meeting.status]}</span><button type="button" class="meeting-focus-button" data-meeting-focus="${escape(meeting.id)}">只看本场</button></div></header><div class="meeting-overview"><span>${meeting.participants.map(p=>names[p]).join(' · ')}</span><span>${phases[meeting.phase]||'阶段待核对'}</span><time>${escape(timeLabel(meeting.created_at))}</time></div>${meetingMetricsHTML(meeting)}${meetingProgressNote(meeting)?`<p class="meeting-progress-note">${escape(meetingProgressNote(meeting))}</p>`:''}${stages.map(stage=>meetingRoundHTML(meeting,...stage)).join('')}<footer class="meeting-footer">${meeting.status==='completed'?'各方两轮回复和主持总结已记录':meeting.status==='partial'?(meetingPartialDetail(meeting)||'含未完成')+'；以实际已收到的发言为准':meeting.status==='cancelled'?'本场已取消，已有发言保留':'尚在组织中；开关与待发起状态不代表已调用'} · 记录 #${escape(meeting.id.slice(0,8))}</footer></article>`;
+  return `<article class="message meeting-card" data-meeting-id="${escape(meeting.id)}"><header class="meeting-heading"><div><span class="meeting-eyebrow">圆桌会议 · 主持 ${names[host]}</span><h2>${escape(meeting.topic)}</h2></div><div class="meeting-heading-actions"><span class="meeting-state meeting-state--${escape(meeting.status)}">${states[meeting.status]}</span><button type="button" class="meeting-focus-button" data-meeting-focus="${escape(meeting.id)}">只看本场</button></div></header><div class="meeting-overview">${meetingRosterHTML(meeting)}<span>${phases[meeting.phase]||'阶段待核对'}</span><time>${escape(timeLabel(meeting.created_at))}</time></div>${meetingMetricsHTML(meeting)}${meetingProgressNote(meeting)?`<p class="meeting-progress-note">${escape(meetingProgressNote(meeting))}</p>`:''}${stages.map(stage=>meetingRoundHTML(meeting,...stage)).join('')}<footer class="meeting-footer">${meeting.status==='completed'?'各方两轮回复和主持总结已记录':meeting.status==='partial'?(meetingPartialDetail(meeting)||'含未完成')+'；以实际已收到的发言为准':meeting.status==='cancelled'?'本场已取消，已有发言保留':'尚在组织中；开关与待发起状态不代表已调用'} · 记录 #${escape(meeting.id.slice(0,8))}</footer></article>`;
 }
 const expandedTaskProgress=new Map();
 function rememberProgressExpansion(id,open){
@@ -1610,7 +1783,7 @@ function renderComposer(conv,health){
   const session=conv?.branches?.[selectedBranch(conv)];if(session)$('composer-target').textContent=(fixedTarget?'发送到 '+conv.title+' · ':'发送到 ')+session.title;
   $('prompt').placeholder=conv?.turns.length?'继续和 Antigravity 一起工作…':'和 Antigravity 一起工作…';
   $('send').hidden=busy;$('stop').hidden=!busy;$('run-status').hidden=!busy;
-  $('send').disabled=busy||submitting||modelSaving||awaitingBinding||!online||!health.connected||!$('prompt').value.trim();
+  $('send').disabled=busy||submitting||modelSaving||awaitingBinding||!online||!health.connected||!$('prompt').value.trim()||(typeof composerModelResolution==='function'&&!!composerModelResolution()?.error);
   $('model').disabled=busy||submitting||awaitingBinding||modelSaving;$('task-kind').disabled=busy||submitting||awaitingBinding;$('prompt').disabled=busy||submitting||awaitingBinding;
   $('stop').disabled=!online||currentTurn?.status==='cancelling';syncComposerModelPickers();updateTaskMode();
   if(currentTurn){$('run-label').textContent=currentTurn.status==='cancelling'?'正在停止任务':currentTurn.status==='queued'?'任务已排队':'Antigravity 正在处理';$('run-detail').textContent=currentTurn.status==='cancelling'?'等待进程退出，保留已收到的内容…':currentTurn.events?.at(-1)==='正在处理'?'正在等待模型返回首段回复…':currentTurn.events?.at(-1)||'正在连接，首次回复可能需要片刻…';$('stop').dataset.turn=currentTurn.id;$('run-time').textContent=duration((Date.now()-new Date(currentTurn.started_at||currentTurn.created_at))/1000);}
@@ -1654,8 +1827,8 @@ function render(){
   if(viewMode!=='panel'){$('empty').hidden=true;$('messages').hidden=viewMode!=='external';$('export').disabled=true;if(viewMode==='external')renderExternal({readingTop,nearBottom});else{$('conversation-title').textContent='全局 CLI 活动';$('conversation-subtitle').textContent='查看其他窗口的活动状态、请求和回复';if(lastRender!=='activity'){clearMessageRows();lastRender='activity';}renderActivity();}return;}
   $('conversation-title').textContent=conv?.title||'研究工作台';
   $('conversation-subtitle').textContent=conv?.codex_thread_id?'已绑定 Codex · '+collaborationStateText(conversationMeta(conv.id)):conv?.turns.length?`${turnCount(conv)} 轮对话 · 继续追问会保留上下文`:'任务、进度和结果，都在这里';
-  $('export').disabled=!conv?.turns.length;
-  const hasTranscript=!!conv?.turns.length||roundtableMeetings(conv).length>0||!!conv?.meeting_summaries?.length;$('empty').hidden=hasTranscript;$('messages').hidden=!hasTranscript;
+  const hasTranscript=!!conv?.turns.length||roundtableMeetings(conv).length>0||!!conv?.meeting_summaries?.length;
+  $('export').disabled=!hasTranscript;$('empty').hidden=hasTranscript;$('messages').hidden=!hasTranscript;
   renderPaging(conv);renderMeetingPaging(conv);
   if(conv?.summary){syncMessageRows('loading:'+conv.id,[{key:'loading',signature:'loading',html:()=>'<p class="activity-empty">正在载入最近 20 轮对话…</p>'}]);return;}
   const rows=[],speeches=conv?.turns?.length?roundtableMessages(conv):[],meetings=Array.isArray(conv?.roundtable_meetings)?roundtableMeetings(conv):[],meetingTurns=meetings.length?meetingLinkedTurnIDs(meetings):new Set();for(const t of conv?.turns||[]){
@@ -1721,6 +1894,7 @@ document.querySelectorAll('[data-font-size]').forEach(b=>b.addEventListener('cli
 document.querySelectorAll('[data-idle-ms]').forEach(b=>b.addEventListener('click',()=>saveUISetting('idleMs',Number(b.dataset.idleMs))));
 document.querySelectorAll('[data-theme-choice]').forEach(b=>b.addEventListener('click',()=>saveUISetting('theme',b.dataset.themeChoice)));
 function renderGlobalModelSettings(){
+  const row=$('global-model-row');if(row)row.hidden=snapshot.service?.features?.global_model_policy===true;
   const models=orderedModels(snapshot.health?.models||[],uiSettings.modelOrder),selected=snapshot.preferred_model||'',source=$('global-model-select');
   let html='<option value="">智能选择（按额度）</option>'+models.map(m=>'<option value="'+escape(m.id)+'">'+escape(m.label)+'</option>').join('');
   if(selected&&!models.some(m=>m.id===selected))html+='<option disabled value="'+escape(selected)+'">'+escape(selected)+'（暂不可用）</option>';
@@ -1806,17 +1980,19 @@ $('fallback-kind').addEventListener('change',renderFallbackSettings);
 document.querySelectorAll('[data-fallback-kind]').forEach(button=>button.addEventListener('click',()=>{$('fallback-kind').value=button.dataset.fallbackKind;fallbackAvailableExpanded=false;renderFallbackSettings();}));
 $('fallback-scope').addEventListener('change',()=>{fallbackScopeId=$('fallback-scope').value;renderFallbackSettings();});
 $('fallback-enabled').addEventListener('click',()=>{const {settings}=fallbackView();saveFallbackSettings({...settings,enabled:!settings.enabled});});
-$('fallback-reset').addEventListener('click',()=>{const {settings}=fallbackView();saveFallbackSettings({enabled:settings.enabled});});
+$('fallback-reset').addEventListener('click',()=>{const {settings,global,configured,owner,kind}=fallbackView();saveFallbackSettings(global&&!configured?{enabled:settings.enabled,models:fallbackCandidates(owner,kind,settings)}:{enabled:settings.enabled});});
 $('fallback-add-toggle').addEventListener('click',()=>{fallbackAvailableExpanded=!fallbackAvailableExpanded;renderFallbackSettings();});
 $('fallback-models').addEventListener('click',event=>{const button=event.target.closest('[data-fallback-move]');if(button&&!button.disabled)moveFallbackModel(button.dataset.fallbackId,button.dataset.fallbackMove);});
-$('fallback-models').addEventListener('change',event=>{
+function changeFallbackModel(event){
   const input=event.target,family=input.dataset.fallbackFamily||input.dataset.fallbackTier;if(!family)return;
   const {owner,kind,settings}=fallbackView(),group=modelFamilies(orderedModels(snapshot.health?.models||[],uiSettings.modelOrder)).find(g=>g.key===family);if(!group)return;
   let models=[...fallbackCandidates(owner,kind,settings)],index=models.findIndex(m=>group.variants.some(v=>v.id===m));
-  if(input.dataset.fallbackTier||input.checked){const select=[...$('fallback-models').querySelectorAll('[data-fallback-tier]')].find(n=>n.dataset.fallbackTier===family),value=input.dataset.fallbackTier?input.value:select?.value||group.variants[0].id;if(index<0)models.push(value);else models[index]=value;}
+  if(input.dataset.fallbackTier||input.checked){const select=[...input.closest('.fallback-model-row').querySelectorAll('[data-fallback-tier]')].find(n=>n.dataset.fallbackTier===family),value=input.dataset.fallbackTier?input.value:select?.value||group.variants[0].id;if(index<0)models.push(value);else models[index]=value;}
   else if(index>=0)models.splice(index,1);
-  saveFallbackSettings({enabled:settings.enabled,models});
-});
+  return saveFallbackSettings({enabled:settings.enabled,models});
+}
+$('fallback-models').addEventListener('change',changeFallbackModel);
+$('fallback-available').addEventListener('change',changeFallbackModel);
 $('settings-insights-toggle').addEventListener('click',()=>{settingsInsightsExpanded=!settingsInsightsExpanded;renderSettingsInsights();if(settingsInsightsExpanded)readSettingsInsights();});
 $('settings-insights-refresh').addEventListener('click',()=>readSettingsInsights(true));
 installLightDismiss($('settings-dialog'));
@@ -1844,9 +2020,22 @@ window.addEventListener('resize',hideQuickTooltip);
 document.addEventListener('scroll',hideQuickTooltip,true);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)hideQuickTooltip();});
 document.addEventListener('keydown',event=>{if(event.key==='Escape')hideQuickTooltip();},true);
-$('session-tabs').addEventListener('click',event=>{const tab=event.target.closest('[data-session-open]');if(tab)selectConversation(activeId,tab.dataset.sessionOpen);});
+$('session-tabs').addEventListener('click',event=>{const tab=event.target.closest('[data-session-open]');if(tab&&selectedBranch(conversationMeta(activeId))!==tab.dataset.sessionOpen)selectConversation(activeId,tab.dataset.sessionOpen);});
+$('session-tabs').addEventListener('dblclick',renameSessionTab);
 $('session-add').addEventListener('click',()=>openSessionDialog());
-$('session-rename').addEventListener('click',()=>openSessionDialog('rename'));
+$('session-rename').addEventListener('click',()=>sessionMenuScope?closeSessionMenu():openSessionMenu());
+$('session-rename').addEventListener('keydown',event=>{if(event.key==='ArrowDown'){event.preventDefault();openSessionMenu(true);}});
+$('session-export').addEventListener('click',()=>exportSessionMarkdown(sessionMenuScope));
+$('session-export-all').addEventListener('click',()=>exportSessionMarkdown(sessionMenuScope,false,true));
+$('session-export-meeting').addEventListener('click',()=>exportSessionMarkdown(sessionMenuScope,true));
+$('session-actions-menu').addEventListener('keydown',event=>{
+  const items=[...$('session-actions-menu').querySelectorAll('[role="menuitem"]')].filter(item=>!item.hidden&&!item.disabled),index=items.indexOf(document.activeElement);
+  if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();items[event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowUp'?-1:1)+items.length)%items.length]?.focus();}
+});
+document.addEventListener('pointerdown',event=>{if(sessionMenuScope&&!$('session-actions-wrap').contains(event.target))closeSessionMenu();},true);
+document.addEventListener('focusin',event=>{if(sessionMenuScope&&!$('session-actions-wrap').contains(event.target))closeSessionMenu();});
+document.addEventListener('keydown',event=>{if(sessionMenuScope&&event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();closeSessionMenu(true);}},true);
+window.addEventListener('resize',()=>closeSessionMenu());
 $('session-related-toggle').addEventListener('click',()=>{relatedExpanded=!relatedExpanded;renderSessions();});
 $('session-related-list').addEventListener('click',event=>{const button=event.target.closest('[data-related-session]');if(button)showRelatedSession(button.dataset.relatedSession);});
 $('session-dialog-cancel').addEventListener('click',()=>$('session-dialog').close());
@@ -1867,6 +2056,7 @@ $('meeting-action-form').addEventListener('submit',confirmMeetingUnavailable);
 $('meeting-action-dialog').addEventListener('close',()=>{if(!meetingActionState?.pending)meetingActionState=null;});
 $('meeting-action-detail').addEventListener('click',event=>{const button=event.target.closest('[data-meeting-original][data-meeting-turn]');if(button){$('meeting-action-dialog').close();openMeetingTurn(button.dataset.meetingOriginal,button.dataset.meetingTurn);}});
 $('meeting-focus-return').addEventListener('click',()=>setMeetingFocus());
+for(const eventName of ['wheel','touchmove','pointerdown','keydown'])$('conversation').addEventListener(eventName,protectMeetingReading,{passive:true});
 $('meetings-older').addEventListener('click',loadOlderMeetings);
 $('meetings-latest').addEventListener('click',latestMeetings);
 $('turns-older').addEventListener('click',()=>pageConversation('older'));
@@ -1907,7 +2097,7 @@ $('history-dialog-cancel').addEventListener('click',()=>$('history-dialog').clos
 $('history-dialog-form').addEventListener('submit',async event=>{event.preventDefault();if($('history-dialog-confirm').disabled||!historyDialogEntry)return;$('history-dialog-confirm').disabled=true;$('history-dialog-error').hidden=true;try{await applyHistoryAction(historyDialogEntry,historyDialogAction,$('history-name').value.trim());$('history-dialog').close();}catch(e){$('history-dialog-error').textContent=e.message;$('history-dialog-error').hidden=false;}finally{$('history-dialog-confirm').disabled=false;}});
 $('menu').addEventListener('click',()=>setSidebarOpen(!$('sidebar').classList.contains('open')));
 setSidebarOpen(window.innerWidth>740);
-$('prompt').addEventListener('input',()=>{$('prompt').style.height='auto';$('prompt').style.height=$('prompt').value?Math.min(220,$('prompt').scrollHeight)+'px':'38px';$('send').disabled=busy||submitting||modelSaving||!online||!snapshot.health.connected||!$('prompt').value.trim();queueDraftSave();});
+$('prompt').addEventListener('input',()=>{$('prompt').style.height='auto';$('prompt').style.height=$('prompt').value?Math.min(220,$('prompt').scrollHeight)+'px':'38px';$('send').disabled=busy||submitting||modelSaving||!online||!snapshot.health.connected||!$('prompt').value.trim()||(typeof composerModelResolution==='function'&&!!composerModelResolution()?.error);queueDraftSave();});
 async function submitComposer(event){
   event.preventDefault();const raw=$('prompt').value,text=raw.trim();if(!text||busy||submitting||modelSaving||reloadBusy||$('send').disabled)return;
   const model=snapshot.service?.features?.window_models?'':$('model').value,kind=$('task-kind').value,sourceKey=stashComposerDraft();let destination=composerConversation();const branch=selectedBranch(destination);
@@ -1935,9 +2125,9 @@ $('quota-ring').addEventListener('click',()=>{accountAnchor='composer';accountEx
 $('task-kind').addEventListener('change',()=>{updateTaskMode();render();});
 $('stop').addEventListener('click',async()=>{try{$('stop').disabled=true;await api(`/api/turns/${$('stop').dataset.turn}/cancel`,{});await refresh();}catch(e){toast(e.message);}});
 $('connection').addEventListener('click',async()=>{try{await api('/api/reconnect',{});await refresh();}catch(e){toast(e.message);}});
-$('account-refresh').addEventListener('click',async()=>{if(accountRefreshPending||!online)return;accountRefreshPending=true;renderAccount();try{await api('/api/account/refresh',{});await refresh();}catch(e){toast(e.message);}finally{accountRefreshPending=false;renderAccount();}});
+$('account-refresh').addEventListener('click',async()=>{if(accountRefreshPending||!online)return;accountReturnSync.armed=false;accountRefreshPending=true;renderAccount();try{await api(snapshot.service?.features?.account_sync?'/api/account/sync':'/api/account/refresh',{});await refresh();}catch(e){toast(e.message);}finally{accountRefreshPending=false;renderAccount();}});
 $('account-toggle').addEventListener('click',()=>{closeSelectMenu();closeHistoryMenu();accountAnchor='header';accountExpanded=!accountExpanded;renderAccount();});
-$('export').addEventListener('click',()=>{if(active())window.location.href=`/api/conversations/${activeId}/export`;});
+$('export').addEventListener('click',()=>exportSessionMarkdown());
 document.addEventListener('keydown',event=>{if(['panel-action-dialog','meeting-action-dialog','fulltext-dialog','backup-dialog','software-update-dialog','config-import-dialog'].some(id=>$(id)?.open)||openSelectId||$('bulk-dialog').open||$('session-dialog').open||$('related-dialog').open||$('collaboration-audit-dialog').open||$('task-queue-dialog').open||$('settings-dialog').open)return;if($('image-preview').open){if(event.key==='Escape'){event.preventDefault();closeImagePreview();}return;}if($('history-dialog').open)return;if(resourceExpanded&&event.key==='Escape'){event.preventDefault();closeResources(true);return;}if(accountExpanded&&event.key==='Escape'){event.preventDefault();accountExpanded=false;renderAccount();$(accountAnchor==='composer'?'quota-ring':'account-toggle').focus();return;}if(!$('history-menu').hidden){if(event.key==='Escape'){event.preventDefault();closeHistoryMenu();return;}if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();const buttons=[...$('history-menu').querySelectorAll('button:not([hidden]):not(:disabled)')],index=buttons.indexOf(document.activeElement);buttons[event.key==='Home'?0:event.key==='End'?buttons.length-1:(index+(event.key==='ArrowDown'?1:buttons.length-1))%buttons.length]?.focus();return;}}if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='k'){event.preventDefault();newConversation();}if(event.key==='Escape')setSidebarOpen(false);});
 const templates={review:'请审查以下研究方案，按「关键问题、依据、修改建议」给出意见。区分事实与假设，不编造参考文献。\n\n[在这里粘贴研究方案]',writing:'请润色下面的论文段落，保留原意和所有数据，不补造结果与引用。先给修改稿，再说明主要修改。\n\n[在这里粘贴论文段落]',code:'请审查下面的统计代码，重点检查分析单位、缺失值处理、数据泄漏和结果解释。指出具体位置并给出修正建议。\n\n[在这里粘贴代码]',image:'请生成一张图片，按以下要求返回实际图片文件。\n\n主题：[填写图片内容]\n风格：[如简洁示意图、插画、写实]\n用途：[如论文配图、演示文稿]\n比例：[如 1:1、16:9]'};
 document.querySelectorAll('[data-template]').forEach(button=>button.addEventListener('click',()=>{$('task-kind').value=button.dataset.template==='image'?'image':'text';updateTaskMode();$('prompt').value=templates[button.dataset.template];$('prompt').dispatchEvent(new Event('input'));render();$('prompt').focus();}));
@@ -1959,7 +2149,7 @@ function ensureRunClock(epoch){
 function startPolling(){
   stopPolling();idlePolls=0;if(document.hidden||reloadBusy)return;const epoch=pollEpoch;
   const channel=(key,action,delay)=>{const cycle=async()=>{pollTimers.delete(key);if(epoch!==pollEpoch||document.hidden)return;try{await action();}finally{if(epoch===pollEpoch&&!document.hidden)pollTimers.set(key,setTimeout(cycle,typeof delay==='function'?delay():delay));}};cycle().catch(()=>{});};
-  channel('state',async()=>{await refresh(false);idlePolls=pollingBusy()?0:Math.min(3,idlePolls+1);ensureRunClock(epoch);},()=>pollingBusy()?1600:Math.min(uiSettings.idleMs,4000*Math.max(1,idlePolls)));
+  channel('state',async()=>{await refresh(false);if(typeof syncReturnedAccount==='function')await syncReturnedAccount();idlePolls=pollingBusy()?0:Math.min(3,idlePolls+1);ensureRunClock(epoch);},()=>pollingBusy()?1600:Math.min(uiSettings.idleMs,4000*Math.max(1,idlePolls)));
   let memoryBusy=!!pollingBusy(),memoryInFlight=false,memoryAgain=false;
   const memoryCycle=async()=>{
     pollTimers.delete('resources');if(epoch!==pollEpoch||document.hidden)return;
@@ -1971,7 +2161,11 @@ function startPolling(){
   memoryCycle().catch(()=>{});
   channel('activity',refreshActivity,()=>['activity','external'].includes(viewMode)?2400:pollingBusy()?12000:30000);
 }
-document.addEventListener('visibilitychange',()=>{if(document.hidden)stashComposerDraft();startPolling();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){stashComposerDraft();if(typeof accountReturnDeparted==='function')accountReturnDeparted();}else if(typeof accountReturnFocused==='function')accountReturnFocused(false);startPolling();});
+window.addEventListener('blur',()=>accountReturnDeparted());
+window.addEventListener('focus',()=>accountReturnFocused());
+document.addEventListener('pointerdown',accountReturnInteracted,true);
+document.addEventListener('keydown',accountReturnInteracted,true);
 window.addEventListener('pagehide',()=>{stashComposerDraft();stopPolling();});
 window.addEventListener('pageshow',event=>{if(event.persisted)startPolling();});
 if(['all','panel','external','hidden','trash'].includes(sessionStorage.getItem('agy-history-filter')))$('history-filter').value=sessionStorage.getItem('agy-history-filter');

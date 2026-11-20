@@ -1,3 +1,5 @@
+> **升级门槛：preview.16 及更早 → preview.22 必须先使用完整包。** 旧稳定 bootstrap 不接受新模块 `transcript_export.py`，且普通程序包不会更新 bootstrap。关闭原工具、保留数据后完整升级；本候选不发布 program ZIP 或 updates feed。
+
 > Preview.8 → preview.13 requires a complete package: the old bootstrap does not accept multi_ai_collaboration.py. Program-only updates are disabled by default for this release candidate.
 
 # Agy Console 更新协议 v1

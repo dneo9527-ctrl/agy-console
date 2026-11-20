@@ -9,7 +9,7 @@ import re
 import sys
 import time
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 from urllib.request import ProxyHandler, Request, build_opener
 
 ROOT = Path(__file__).resolve().parent
@@ -36,10 +36,27 @@ def multi_ai_metadata(conversation, thread_id, features):
     return json.loads(json.dumps(value))
 
 
-def panel_action(conversation, url):
-    enabled = conversation.get('auto_open_activity') is not False
+def panel_action(conversation, url, request_show=True):
+    enabled = request_show and conversation.get('auto_open_activity') is not False
     return {'type': 'show_existing_browser' if enabled else 'none', 'enabled': enabled,
             'url': url, 'placement': 'right', 'verified_visible': False}
+
+
+def meeting_activity_url(base_url, conversation, thread_id, meeting, meeting_id=None, branch=None):
+    """Resolve a saved meeting only inside its exact chat and work session."""
+    if (conversation.get('codex_thread_id') != thread_id or not isinstance(meeting, dict)
+            or meeting.get('codex_thread_id') != thread_id
+            or not isinstance(meeting.get('id'), str)
+            or not re.fullmatch(r'[a-f0-9]{32}', meeting['id'])
+            or meeting_id is not None and meeting['id'] != meeting_id
+            or not isinstance(meeting.get('branch'), str)
+            or not re.fullmatch(r'[a-z][a-z0-9_-]{0,39}', meeting['branch'])
+            or branch is not None and meeting['branch'] != branch):
+        raise ValueError('圆桌活动目标与当前聊天或工作会话不一致，未打开其他页面。')
+    url = base_url.rstrip('/') + '/?codex=' + thread_id
+    if meeting['branch'] != conversation.get('primary_branch'):
+        url += '&session=' + meeting['branch']
+    return url + '&meeting=' + meeting['id']
 
 
 def roundtable_metadata(conversation, thread_id, features):
@@ -155,8 +172,10 @@ def main():
     parser.add_argument('--meeting-create', help='Create one independent meeting from exact-thread JSON; starts no model')
     parser.add_argument('--meeting-event', help='Record one actual meeting event from JSON; starts no model')
     parser.add_argument('--meeting-view', help='Read one exact meeting ID, or list recent meetings; starts no model')
+    parser.add_argument('--meeting-context', help='Read stage-scoped evidence for one exact meeting; starts no model or panel')
+    parser.add_argument('--meeting-provider', choices=('codex', 'agy', 'muse', 'claude'), help='Explicit frozen recipient for --meeting-context only')
     parser.add_argument('--meeting', help='Link this Agy dispatch to an existing independent meeting ID')
-    parser.add_argument('--meeting-stage', choices=('proposal', 'review', 'summary'), help='Frozen stage for --meeting task dispatch')
+    parser.add_argument('--meeting-stage', choices=('proposal', 'review', 'summary'), help='Frozen stage for --meeting dispatch or --meeting-context inspection')
     args = parser.parse_args()
     if not args.thread_id or not UUID.fullmatch(args.thread_id):
         parser.error('需要当前 Codex 聊天 ID；请使用 CODEX_THREAD_ID 或 --thread-id。')
@@ -174,10 +193,18 @@ def main():
         parser.error('--ensure 只读或保存偏好，不能混入任务派发/导入。')
     if args.auto_open and not args.ensure:
         parser.error('--auto-open 仅用于 --ensure，不会启动模型。')
-    controls = [args.meeting_create, args.meeting_event, args.meeting_view]
+    controls = [args.meeting_create, args.meeting_event, args.meeting_view, args.meeting_context]
     if sum(bool(value) for value in controls) > 1:
         parser.error('会议创建、记录和读取请分别执行。')
-    if bool(args.meeting) != bool(args.meeting_stage):
+    if args.meeting_context:
+        if (not re.fullmatch(r'[a-f0-9]{32}', args.meeting_context)
+                or not args.meeting_stage or not args.meeting_provider):
+            parser.error('--meeting-context 需明确会议ID、--meeting-stage 和 --meeting-provider。')
+        if args.title or args.timeout != 600:
+            parser.error('会议上下文只读，不接受标题或任务超时设置。')
+    elif args.meeting_provider:
+        parser.error('--meeting-provider 仅用于 --meeting-context，不会改变提供方开关。')
+    if not args.meeting_context and bool(args.meeting) != bool(args.meeting_stage):
         parser.error('--meeting 和 --meeting-stage 需一起用于任务派发。')
     if args.meeting and (not re.fullmatch(r'[a-f0-9]{32}', args.meeting)
             or not args.task_file or args.ensure or args.import_result or args.stage_import
@@ -187,8 +214,31 @@ def main():
         if (args.task_file or args.ensure or args.import_result or args.stage_import
                 or args.review_turn or args.review_file or args.record_message or args.context
                 or args.model or args.out or args.branch or args.branch_title or args.no_wait
-                or args.meeting or args.meeting_stage or args.kind != 'text'):
+                or args.meeting or (args.meeting_stage and not args.meeting_context) or args.kind != 'text'):
             parser.error('会议记录操作不启动模型，不能与任务或偏好操作混用。')
+        if args.meeting_context:
+            client = Client(args.url)
+            conv = client.bind(args.thread_id)
+            if client.features.get('roundtable_context') is not True:
+                raise ValueError('本场阶段上下文需从原前台控制台加载新版后台。')
+            if (not isinstance(conv, dict) or conv.get('codex_thread_id') != args.thread_id
+                    or not isinstance(conv.get('id'), str)
+                    or not re.fullmatch(r'[a-f0-9]{32}', conv['id'])):
+                raise ValueError('固定绑定与当前确切聊天不匹配，未读取其他会话。')
+            query = urlencode({'stage': args.meeting_stage, 'provider': args.meeting_provider})
+            result = client.request('/api/conversations/' + conv['id'] + '/meetings/'
+                                    + args.meeting_context + '/context?' + query)
+            if (not isinstance(result, dict) or type(result.get('schema_version')) is not int
+                    or result['schema_version'] != 1 or result.get('codex_thread_id') != args.thread_id
+                    or result.get('meeting_id') != args.meeting_context
+                    or result.get('stage') != args.meeting_stage
+                    or result.get('provider') != args.meeting_provider
+                    or not isinstance(result.get('branch'), str)
+                    or not re.fullmatch(r'[a-z][a-z0-9_-]{0,39}', result['branch'])
+                    or not isinstance(result.get('text'), str)):
+                raise ValueError('返回的会议上下文与当前聊天、会议或阶段不匹配，未输出材料。')
+            print(json.dumps(result, ensure_ascii=False))
+            return 0
         body, mid = None, None
         if args.meeting_view:
             if args.meeting_view != 'list' and not re.fullmatch(r'[a-f0-9]{32}', args.meeting_view):
@@ -217,6 +267,11 @@ def main():
         else:
             if args.meeting_create:
                 result = client.request(base, body)
+                url = meeting_activity_url(client.url, conv, args.thread_id,
+                                           result.get('meeting'),
+                                           branch=body.get('branch') or conv.get('primary_branch'))
+                result = dict(result, url=url,
+                              panel_action=panel_action(conv, url, not result.get('duplicate', False)))
             else:
                 result = client.request(base + '/' + mid + '/events', body)
         print(json.dumps(result, ensure_ascii=False))
@@ -305,6 +360,7 @@ def main():
                           **({'multi_ai_collaboration':multi} if multi is not None else {}),
                           'roundtable_host_supported':bool(client.features.get('roundtable_host')),
                           'roundtable_meetings_supported':bool(client.features.get('roundtable_meetings')),
+                          'roundtable_context_supported':bool(client.features.get('roundtable_context')),
                           'meeting_summaries':conv.get('meeting_summaries', []),
                           **({'roundtable':meeting, 'roundtable_plan':plan} if meeting is not None else {}),
                           'console_startup_supported':bool(client.features.get('console_startup')),
@@ -374,6 +430,10 @@ def main():
         raise ValueError('圆桌主持或参与方已暂停，未派发；请检查当前聊天设置。')
     if args.meeting and not client.features.get('roundtable_meetings'):
         raise ValueError('独立会议任务需先加载新版后台。')
+    if args.meeting:
+        linked_meeting = client.request('/api/conversations/' + conv['id'] + '/meetings/' + args.meeting)
+        fixed_url = meeting_activity_url(client.url, conv, args.thread_id, linked_meeting,
+                                         meeting_id=args.meeting, branch=args.branch)
     selection_state = client.request('/api/state?summary=1') if not args.model and not client.features.get('window_models') else {}
     model = args.model or ('' if client.features.get('window_models') else default_model(selection_state))
     turn = client.request('/api/conversations/' + conv['id'] + '/turns', {'prompt':prompt, 'model':model, 'kind':args.kind, 'codex_dispatch':True,
@@ -384,7 +444,7 @@ def main():
                       **({'roundtable':turn['roundtable'], 'roundtable_role':turn.get('roundtable_role')} if 'roundtable' in turn else {}),
                       'duplicate_submission':turn.get('duplicate_submission', False),
                       **({'meeting_id':turn['meeting_id'], 'meeting_stage':turn['meeting_stage']} if 'meeting_id' in turn else {}),
-                      'panel_action': panel_action(conv, fixed_url)}, ensure_ascii=False), flush=True)
+                      'panel_action': panel_action(conv, fixed_url, not turn.get('duplicate_submission', False))}, ensure_ascii=False), flush=True)
     if args.no_wait:
         return 0
     conv, turn = client.wait(conv['id'], turn['id'], args.timeout)

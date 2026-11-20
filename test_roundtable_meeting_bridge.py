@@ -102,6 +102,32 @@ class MeetingBridgeTests(unittest.TestCase):
         self.assertFalse(output[0]['model_started'])
         self.assertEqual(client.calls, [(BASE, self.create_body)])
         self.assertEqual(client.bindings, [(THREAD, None, {})])
+        self.assertEqual(output[0]['url'], client.url + '/?codex=' + THREAD + '&session=main&meeting=' + MID)
+        self.assertEqual(output[0]['panel_action']['type'], 'none')
+
+    def test_create_requests_one_exact_meeting_presentation_only_when_enabled_and_new(self):
+        client = MeetingClient()
+        client.conv.update(auto_open_activity=True, primary_branch='main')
+        _, output = self.invoke(client, '--meeting-create', str(self.create))
+        expected = client.url + '/?codex=' + THREAD + '&meeting=' + MID
+        self.assertEqual(output[0]['url'], expected)
+        self.assertEqual(output[0]['panel_action'], {
+            'type': 'show_existing_browser', 'enabled': True, 'url': expected,
+            'placement': 'right', 'verified_visible': False})
+        client.duplicate = True
+        _, output = self.invoke(client, '--meeting-create', str(self.create))
+        self.assertEqual(output[0]['url'], expected, 'idempotent create retains the exact saved target')
+        self.assertEqual(output[0]['panel_action']['type'], 'none', 'recovery must not request focus again')
+
+    def test_create_rejects_unverified_response_target_without_presentation(self):
+        for changes in [{'id': 'bad'}, {'codex_thread_id': OTHER}, {'branch': 'art'},
+                        {'branch': 'bad&meeting=other'}]:
+            client = MeetingClient()
+            client.conv['auto_open_activity'] = True
+            client.frozen.update(changes)
+            with self.subTest(changes=changes), self.assertRaisesRegex(ValueError, '活动目标'):
+                self.invoke(client, '--meeting-create', str(self.create))
+            self.assertFalse(any(path.endswith('/turns') for path, _ in client.calls))
 
     def test_observed_event_routes_exact_meeting_without_inventing_payload(self):
         client = MeetingClient()
@@ -112,13 +138,15 @@ class MeetingBridgeTests(unittest.TestCase):
         expected.pop('meeting_id')
         self.assertEqual(client.calls, [(BASE + '/' + MID + '/events', expected)])
         self.assertEqual(json.loads(self.event.read_text()), self.event_body)
+        self.assertNotIn('panel_action', output[0], 'a received reply does not steal focus every round')
 
     def test_read_list_and_exact_id_are_model_free_gets_even_when_paused(self):
         for selector, path in [('list', BASE), (MID, BASE + '/' + MID)]:
             with self.subTest(selector=selector):
                 client = MeetingClient(controls=policy(enabled=False))
-                self.invoke(client, '--meeting-view', selector)
+                _, output = self.invoke(client, '--meeting-view', selector)
                 self.assertEqual(client.calls, [(path, None)])
+                self.assertNotIn('panel_action', output[0], 'read-only inspection never requests presentation')
 
     def test_source_identity_survives_idempotent_create_and_event_replay(self):
         for flag, path in [('--meeting-create', self.create), ('--meeting-event', self.event)]:
@@ -151,6 +179,26 @@ class MeetingBridgeTests(unittest.TestCase):
         self.assertEqual(output[0]['meeting_id'], MID)
         self.assertEqual(output[0]['meeting_stage'], 'proposal')
         self.assertEqual(output[0]['panel_action']['type'], 'none')
+        self.assertEqual(output[0]['url'], client.url + '/?codex=' + THREAD + '&session=main&meeting=' + MID)
+
+    def test_native_targets_saved_meeting_branch_and_rejects_mismatch_before_submit(self):
+        client = MeetingClient()
+        client.conv.update(auto_open_activity=True, primary_branch='main')
+        client.frozen['branch'] = 'writing'
+        _, output = self.native(client)
+        expected = client.url + '/?codex=' + THREAD + '&session=writing&meeting=' + MID
+        self.assertEqual(output[0]['url'], expected)
+        self.assertEqual(output[0]['panel_action']['url'], expected)
+        self.assertEqual(output[0]['panel_action']['type'], 'show_existing_browser')
+        self.assertFalse(output[0]['panel_action']['verified_visible'])
+        for changes, flags in [({}, ['--branch', 'main']), ({'id': 'e' * 32}, []),
+                               ({'codex_thread_id': OTHER}, []), ({'branch': 'bad&target=other'}, [])]:
+            other = MeetingClient()
+            other.frozen.update({'branch': 'writing', **changes})
+            with self.subTest(changes=changes, flags=flags), self.assertRaisesRegex(ValueError, '活动目标'):
+                self.native(other, *flags)
+            self.assertFalse(any(path.endswith('/turns') for path, _ in other.calls),
+                             'unknown target must be rejected before model submission')
 
     def test_duplicate_native_receipt_is_reported_without_client_resubmission_loop(self):
         client = MeetingClient()
@@ -158,6 +206,7 @@ class MeetingBridgeTests(unittest.TestCase):
         _, output = self.native(client)
         self.assertTrue(output[0]['duplicate_submission'])
         self.assertEqual(len([p for p, _ in client.calls if p.endswith('/turns')]), 1)
+        self.assertEqual(output[0]['panel_action']['type'], 'none')
 
     def test_native_dispatch_master_agy_and_malformed_policy_fail_closed(self):
         for controls in [policy(enabled=False), policy(agy=False), {'bad': True}]:
@@ -301,7 +350,8 @@ class MeetingBridgeHTTPTests(unittest.TestCase):
             bound = app.bind_codex(THREAD)
             cid = bound['id']
             app.conversation(cid).update(primary_branch='main', branches={
-                'main': {'id': 'main', 'title': 'Main', 'agy_id': None}})
+                'main': {'id': 'main', 'title': 'Main', 'agy_id': None},
+                'writing': {'id': 'writing', 'title': 'Writing', 'agy_id': None}})
             app.set_multi_ai_collaboration(cid, {'codex_thread_id': THREAD,
                                                  'providers': {'muse': {'enabled': True}}})
             app.set_roundtable(cid, {'codex_thread_id': THREAD, 'host': 'codex', 'mode': 'roundtable'})
@@ -332,6 +382,12 @@ class MeetingBridgeHTTPTests(unittest.TestCase):
                 mid = first['meeting']['id']
                 self.assertFalse(first['model_started'])
                 self.assertTrue(invoke('--meeting-create', str(create))['duplicate'])
+                writing_create = root / 'writing-create.json'
+                writing_create.write_text(json.dumps({'codex_thread_id': THREAD,
+                                                       'source_id': 'real-http-writing',
+                                                       'topic': 'Frozen non-primary branch',
+                                                       'branch': 'writing'}))
+                writing_mid = invoke('--meeting-create', str(writing_create))['meeting']['id']
                 event = root / 'event.json'
                 event.write_text(json.dumps({'meeting_id': mid, 'codex_thread_id': THREAD,
                                               'source_id': 'real-http-observed-muse', 'provider': 'muse',
@@ -361,6 +417,18 @@ class MeetingBridgeHTTPTests(unittest.TestCase):
                     self.assertEqual(put.call_count, 1)
                     self.assertTrue(invoke(*args)['duplicate_submission'])
                     self.assertEqual(put.call_count, 1)
+                    branch_keys = set(app.conversation(cid)['branches'])
+                    writing = invoke('--meeting', writing_mid, '--meeting-stage', 'proposal',
+                                     '--task-file', str(task), '--no-wait')
+                    writing_turn = next(t for t in app.conversation(cid)['turns']
+                                        if t['id'] == writing['turn_id'])
+                    self.assertEqual(writing_turn['branch'], 'writing',
+                                     'server inherits the saved meeting branch when CLI branch is omitted')
+                    self.assertEqual(writing['url'], command[-1] + '/?codex=' + THREAD
+                                     + '&session=writing&meeting=' + writing_mid)
+                    self.assertEqual(set(app.conversation(cid)['branches']), branch_keys,
+                                     'dispatch must reuse the existing frozen lane')
+                    self.assertEqual(put.call_count, 2)
                 other = app.bind_codex(OTHER)
                 result = invoke('--meeting-view', mid, thread=OTHER, ok=False)
                 self.assertIn('圆桌', result.stderr)

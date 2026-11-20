@@ -14,6 +14,6 @@ vm.createContext(ctx);vm.runInContext(part('function orderedModels','function re
  assert.deepEqual(chats.a.fallback_preferences.image.models,['argon-high']);
  owner=chats.a;node('fallback-kind').value='image';const n=calls.length;await ctx.moveFallbackModel('argon','up');assert.equal(calls.length,n,'first row cannot move above list');
  node('fallback-kind').value='text';await ctx.moveFallbackModel('argon','down');assert.equal(calls.length,n,'last row cannot move below list');
- const html=fs.readFileSync(__dirname+'/index.html','utf8');assert.ok(!html.includes('<strong>模型排序</strong>'));assert.ok(html.includes('<strong>额度用完自动候补</strong>'));
+ const html=fs.readFileSync(__dirname+'/index.html','utf8');assert.ok(!html.includes('<strong>模型排序</strong>'));assert.ok(html.includes('<strong id="fallback-title">全局智能选择</strong>'));
  console.log('Candidate priority passed: arrows save ordered tiers, first/last bounds, per-chat/per-kind isolation, old sorting surface removed.');
 })().catch(e=>{console.error(e);process.exit(1);});

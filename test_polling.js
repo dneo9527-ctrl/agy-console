@@ -5,7 +5,7 @@ const between=(start,end)=>source.slice(source.indexOf(start),source.indexOf(end
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 (async()=>{
   const events={},timers=new Map();let next=0,stateCalls=0,activityCalls=0,memoryCalls=0;
-  const ctx={uiSettings:{idleMs:12000},online:true,snapshot:{service:{active_tasks:0,features:{resources:true}},health:{}},readMemorySummary:async()=>{memoryCalls++;},submitting:false,reloadBusy:false,idlePolls:0,stashComposerDraft:()=>{},composerTurn:()=>null,composerConversation:()=>null,viewMode:'panel',pollEpoch:0,pollTimers:new Map(),document:{hidden:false,addEventListener:(name,fn)=>events[name]=fn},window:{addEventListener:()=>{}},
+  const ctx={uiSettings:{idleMs:12000},online:true,snapshot:{service:{active_tasks:0,features:{resources:true}},health:{}},readMemorySummary:async()=>{memoryCalls++;},submitting:false,reloadBusy:false,idlePolls:0,stashComposerDraft:()=>{},accountReturnInteracted:()=>{},composerTurn:()=>null,composerConversation:()=>null,viewMode:'panel',pollEpoch:0,pollTimers:new Map(),document:{hidden:false,addEventListener:(name,fn)=>events[name]=fn},window:{addEventListener:()=>{}},
     setTimeout:(fn,delay)=>{timers.set(++next,{fn,delay});return next;},clearTimeout:id=>timers.delete(id),
     refresh:async()=>{stateCalls++;},refreshActivity:async()=>{activityCalls++;},active:()=>null,isBusy:()=>false};
   vm.createContext(ctx);vm.runInContext(between('function stopPolling()','if([\'all\','),ctx);

@@ -1,28 +1,29 @@
 {
-  "schema_version": 1,
-  "product": "Agy Console",
-  "status": "ready",
-  "version": "0.1.0-preview.16",
-  "repository": "dneo9527-ctrl/agy-console",
-  "visibility": "public",
-  "license": "MIT",
-  "authorization_reference": "Existing user-approved public MIT Agy and matching Skill complete GitHub distribution; independently verified public baseline and clean developer handoff. Final CI/install/download gates remain mandatory.",
-  "source_frozen": true,
-  "source_manifest_sha256": "6e8944e829e829c5f28c9ff4128fa86e5bf11e175fcb37aa920ebf13fc767c0e",
+  "authorization_reference": "Existing human-approved public MIT Agy and matching Skill full GitHub distribution; final publisher CI/installer/download gates remain mandatory.",
+  "automatic_cross_web_roundtable": false,
   "channel": "preview",
+  "initial_upgrade": "full_package_required_from_preview16_or_earlier",
+  "license": "MIT",
+  "platform_verification": {
+    "linux-x64": "pending_final_commit_ci_and_native_acceptance",
+    "macos-arm64": "pending_final_commit_ci_and_native_acceptance",
+    "macos-x64": "pending_final_commit_ci_and_native_acceptance",
+    "windows-x64": "pending_final_commit_ci_and_native_acceptance"
+  },
   "platforms": [
     "macos-source",
     "linux-source",
     "windows-x64"
   ],
-  "platform_verification": {
-    "macos-arm64": "pending_final_commit_ci_and_native_acceptance",
-    "macos-x64": "pending_final_commit_ci_and_native_acceptance",
-    "linux-x64": "pending_final_commit_ci_and_native_acceptance",
-    "windows-x64": "pending_final_commit_ci_and_native_acceptance"
-  },
-  "updater_contract": "agreed",
+  "product": "Agy Console",
+  "program_updates_allowed": false,
   "publish_authorized": true,
-  "initial_upgrade": "full_package_required_from_preview8",
-  "automatic_cross_web_roundtable": false
+  "repository": "dneo9527-ctrl/agy-console",
+  "schema_version": 1,
+  "source_frozen": true,
+  "source_manifest_sha256": "b007c47d228301c1b1171051ee71ef8b24fb63cab56133543ee974def333c060",
+  "status": "ready",
+  "updater_contract": "agreed",
+  "version": "0.1.0-preview.23",
+  "visibility": "public"
 }

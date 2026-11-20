@@ -52,7 +52,7 @@ def build_skill(out):
         '--console-root /path/to/AgyConsole --enable-default`.\n\n'
         'Windows: run `windows/install_codex_skill.py` with the existing console\'s bundled '
         'runtime/python.exe and pass `--console-root` explicitly.\n\n'
-        'The matching external-ai-team preview.5 is included in full (9 files per platform). '
+        'The matching external-ai-team preview.6 is included in full (9 files per platform). '
         'Install it separately with `python3 skills/external-ai-team/install.py '
         '--codex-home /path/to/codex-home`; Windows uses its existing bundled Python '
         'and `windows/skills/external-ai-team/install.py`. Existing destinations are never overwritten.\n\n'
@@ -66,6 +66,8 @@ def build_skill(out):
 
 
 def build(out, vendor_archive, expected_vendor_digest, windows_only=False, include_program_updates=False):
+    if include_program_updates and json.loads((ROOT/'release.json').read_text()).get('program_updates_allowed') is False:
+        raise ValueError('Program-only updates are disabled for this complete-package upgrade')
     if audit()['status'] != 'passed': raise ValueError('Source audit failed')
     if sha256(vendor_archive.read_bytes()) != expected_vendor_digest:
         raise ValueError('Windows handoff runtime carrier digest mismatch')
@@ -129,7 +131,7 @@ if __name__ == '__main__':
     p.add_argument('--carrier-sha256',required=True)
     p.add_argument('--report',type=Path,required=True)
     p.add_argument('--windows-only',action='store_true',help='Publish only Windows; leave Mac/Linux releases unchanged')
-    p.add_argument('--program-updates-after-full-upgrade', action='store_true', help='Only for clients already upgraded with the complete new bootstrap; never for preview.8')
+    p.add_argument('--program-updates-after-full-upgrade', action='store_true', help='Only for clients already upgraded with the complete new bootstrap; never for preview.16 or earlier')
     a=p.parse_args()
     result=build(a.out,a.windows_runtime_carrier,a.carrier_sha256,a.windows_only,a.program_updates_after_full_upgrade)
     a.report.parent.mkdir(parents=True,exist_ok=True)

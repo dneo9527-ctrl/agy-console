@@ -1,18 +1,21 @@
 {
-  "version": "0.1.0-preview.16",
+  "version": "0.1.0-preview.23",
   "stage": "publisher_candidate",
-  "source_scope": "218-file developer handoff on public preview.15; retained native platform fixes",
   "developer_reported": {
-    "python_tests": 410,
-    "javascript_suites": 35,
-    "mac_live_roundtable": "7/7; developer evidence only"
+    "python_coverage": 453,
+    "full_run": 452,
+    "final_updated_module": 10,
+    "javascript": 39,
+    "release_framework": 8,
+    "mac_live_roundtable": "7/7; separate developer evidence"
   },
-  "publication_validation": "Final exact-commit Actions, Release and PLATFORM-VERIFICATION.json record performed checks",
+  "publication_validation": "Final exact-commit Actions, Release and PLATFORM-VERIFICATION.json record actual performed checks",
   "not_verified": [
-    "Host automatic visible activity panel",
-    "Native Windows/Linux login and model calls",
-    "System sleep/wake",
-    "Cross-window automatic Skill adoption",
-    "Fresh hardware/old OS/signing/notarization"
+    "Actual Windows/Linux official login/model calls",
+    "Different-account switching",
+    "Real quota exhaustion",
+    "Sleep/wake",
+    "Signing/notarization",
+    "Universal automatic visible activity panel or cross-window adoption"
   ]
 }

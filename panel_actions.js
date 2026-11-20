@@ -43,7 +43,7 @@ function openPanelAction(action){
     $('panel-action-submit').textContent='开始整理';
   }else{
     $('panel-action-title').textContent='切换 CLI 账号';
-    $('panel-action-note').textContent='打开 CC Switch 后自行选择账号。官方登录由本机所有 CLI 窗口共享；切完回此处刷新账号和额度，旧会话可能受账号权限影响。';
+    $('panel-action-note').textContent='在 CC Switch 的“授权中心 → Antigravity”中，点目标账号的“⋯ → 切换 agy 到这个账号”。返回面板后空闲时自动同步账号、额度与模型；无需另开终端。已有 CLI 进程可能继续使用旧账号。';
     $('panel-action-submit').textContent='打开 CC Switch';
   }
   $('settings-dialog').close();accountExpanded=false;renderAccount();closeSelectMenu();hideQuickTooltip();
@@ -68,14 +68,18 @@ async function submitPanelAction(event){
     action.mode==='compact'?{branch:action.branch,acknowledge}:{};
   const path=action.mode==='account'?'/api/account/switch':'/api/conversations/'+action.cid+(action.mode==='recover'?'/turns/'+action.tid+'/recover':'/compact');
   panelActionPending=true;$('panel-action-submit').disabled=true;$('panel-action-error').hidden=true;
+  if(action.mode==='account'&&typeof armAccountReturnSync==='function')armAccountReturnSync();
   try{
     await api(path,body);$('panel-action-dialog').close();
-    if(action.mode==='account')toast('已打开 CC Switch，切换完成后刷新账号');
+    if(action.mode==='account'){
+      if(typeof accountReturnSync!=='undefined')accountReturnSync.opening=false;
+      toast('在 CC Switch 选择账号，返回后自动同步');
+    }
     else{
       conversationPages.delete(pageCacheKey(action.cid,{branch:action.branch}));await refresh();
       selectConversation(action.cid,action.branch);toast(action.mode==='compact'?'整理任务已提交，结果会在原会话显示':'已提交到原工作会话');
     }
-  }catch(error){$('panel-action-error').textContent=error.message;$('panel-action-error').hidden=false;}
+  }catch(error){if(action.mode==='account'&&typeof accountReturnSync!=='undefined')accountReturnSync.armed=false;$('panel-action-error').textContent=error.message;$('panel-action-error').hidden=false;}
   finally{panelActionPending=false;$('panel-action-submit').disabled=false;renderSettings();}
 }
 
@@ -149,7 +153,7 @@ async function previewBackup(){
 function restoreBackupPreferences(value){
   if(!value?.settings)return;
   const settings=value.settings;
-  uiSettings={font:[14,16,18].includes(settings.font)?settings.font:14,idleMs:[4000,12000].includes(settings.idleMs)?settings.idleMs:12000,theme:typeof validThemes!=='undefined'&&validThemes.has(settings.theme)?settings.theme:'night',modelOrder:cleanModelOrder(settings.modelOrder)};
+  uiSettings={font:[12,14,16,18].includes(settings.font)?settings.font:14,idleMs:[4000,12000].includes(settings.idleMs)?settings.idleMs:12000,theme:typeof validThemes!=='undefined'&&validThemes.has(settings.theme)?settings.theme:'night',modelOrder:cleanModelOrder(settings.modelOrder)};
   historyPins=new Set((value.pins||[]).filter(x=>/^(?:panel:[a-f0-9]{32}|external:[a-f0-9-]{36})$/.test(x)));
   try{localStorage.setItem(uiSettingsKey,JSON.stringify(uiSettings));localStorage.setItem(historyPinsKey,JSON.stringify([...historyPins]));}
   catch(error){toast('数据已恢复，但浏览器未能保存部分显示设置。');}

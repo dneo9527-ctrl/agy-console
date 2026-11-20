@@ -1,9 +1,11 @@
-# Agy Console 0.1.0-preview.16
+# Agy Console 0.1.0-preview.23
 
-完整开发者预览，成套包含 agy-console 配套 Skill 和 external-ai-team preview.5 九文件 Skill、显式安装入口、Windows 完整安装器及 Mac/Linux 完整源码预览。
+成套开发者预览，含面板、agy-console 接入 Skill、external-ai-team preview.6 九文件、显式安装器、Windows 完整安装向导与 Mac/Linux 完整源码包。
 
-主持结论优先、按场折叠与聚焦、诚实耗时与已知用量、只读结果核对和受保护的缺席动作改进会议阅读与恢复。Skill 续接准确会议，不因“继续”重开。每次新外发仍检查准确聊天的许可、草稿和会话。
+新增本场前阶段有界材料冻结、只读取证及紧凑真实状态行；累计改进会话/本场 Markdown 导出、零 CLI 圆桌导出、明确本场 URL 草稿刷新恢复、活动跟随、账号身份/模型同步及文字/生图全局智能名单；OpenScience 仍禁用占位。
 
-旧 preview.8 bootstrap 不接受新增模块，必须使用完整包升级；不提供普通 program-only ZIP 或 updates.json。现有数据、模型、暂停和自动打开偏好保留；安装不自动启用新提供方。
+preview.16 及更早必须先关闭工具、保留 data 后使用完整包升级。旧 bootstrap 不支持新模块且不会被 program ZIP 自更新。本版从两个构建入口禁止 program-only，并不发布 updates.json。Skill 仍需显式安装，不改已有规则、模型、暂停或自动打开偏好。
 
-最终准确提交 CI、原生安装器与公开附件检查记录在对应 Release 和 PLATFORM-VERIFICATION.json。宿主活动页自动可见、Windows/Linux 真实登录与模型、系统睡眠唤醒及签名公证未验收。无闲置 Codex 唤醒、后台网页采集或新常驻服务。历史 .15/.4 与全部旧标签和附件保留。
+准确提交 CI、公开 .16/.8 原生安装升级卸载、附件与 Skill 验证以 Release 和 PLATFORM-VERIFICATION.json 为准。真实 Windows/Linux 登录/模型、实际换号、睡眠唤醒、签名公证及全平台可见展开未验收。无闲置模型唤醒或新后台服务。历史 Release 保留。
+
+材料上限不清除官方会话历史，不代表总输入压缩或 token 节省。开发现场实证与发行原生检查分别列证。

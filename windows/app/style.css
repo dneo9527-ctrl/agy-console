@@ -62,9 +62,10 @@
 .sidebar .list-label{padding-top:14px;padding-bottom:8px}
 .history-tools{margin-bottom:6px}
 .sidebar-bottom{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:7px;margin-top:5px;flex-shrink:0;min-height:37px}
-.sidebar-bottom a{padding:3px 4px;gap:7px;font-size:12px}
+.sidebar-bottom a{padding:3px 4px;gap:7px;font-size:12px;min-width:0}
+.sidebar-bottom a>span:nth-child(2){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sidebar-bottom a>span:last-child{margin-left:1px;font-size:12px}
-.sidebar-bottom .muse-orb{width:23px;height:23px;font-size:14px}
+.sidebar-bottom .muse-orb{flex:0 0 28px;width:28px;height:28px;aspect-ratio:1}
 .sidebar-bottom .local-note{margin:0 4px 0 0;gap:5px;font-size:12px;white-space:nowrap}
 
 /* Small theme swatches keep the setting understandable without adding another menu. */
@@ -452,7 +453,8 @@
 .settings-segments button[aria-pressed="true"]{border-color:#8c95c3;background:#3b4563;color:#f0f2ff}
 .settings-row button[role="switch"][aria-checked="true"]{background:#21392f;border-color:#487b63;color:#b0d8c3}
 .settings-footnote{margin:8px 0 10px;font-size:12px;color:#9ba9bf}
-#messages .message-body{font-size:var(--chat-font-size,14px)}#messages .markdown pre{font-size:calc(var(--chat-font-size,14px)*.9)}
+#messages .message-body,#messages .meeting-slot-text,#messages .meeting-text-fold>summary{font-size:var(--chat-font-size,14px)}#messages .markdown :is(pre,code,table){font-size:calc(var(--chat-font-size,14px)*.9)}
+#messages .markdown h2{font-size:1.2em}#messages .markdown h3{font-size:1.1em}#messages .markdown h4{font-size:1em}
 @media(max-width:420px){.settings-row{gap:8px}.settings-row small{max-width:185px}.settings-segments button{padding-inline:6px}}
 .skill-type{font-size:10px;color:#aeb9d0;border:1px solid #47546e;border-radius:4px;padding:1px 4px;margin-left:4px;font-weight:400}
 .model-order-panel{padding:6px 0 8px;border-bottom:1px solid #354058}.model-order-panel>p{margin:0 0 5px;font-size:12px;color:#9eabc0}#settings-model-order-list{max-height:200px;overflow:auto;overscroll-behavior:contain;margin-bottom:6px}.model-order-row{display:flex;align-items:center;gap:5px;padding:3px 0}.model-order-row>span{flex:1;min-width:0;font-size:12px;overflow-wrap:anywhere}.model-order-row button{min-width:28px;padding:4px 6px}
@@ -474,7 +476,7 @@
 .panel-action-dialog p,.action-note{color:#aebbd0;font-size:13px;line-height:1.6;margin:12px 0}.panel-action-dialog label:not(.action-ack){display:block;margin:12px 0 5px;font-size:13px;color:#bdc9de}
 .panel-action-dialog select,.fulltext-form select{width:100%;border:1px solid #48526a;border-radius:8px;background:#252c3b;color:#e0e7f5;padding:9px;font:inherit;font-size:13px}
 #recovery-detail{margin:10px 0;font-size:13px;color:#b6c4db}#recovery-previous{max-height:160px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;color:#b2bed1;background:#181e29;padding:10px;border-radius:8px}
-.action-ack{display:flex!important;align-items:flex-start;gap:8px;margin:14px 0!important;font-size:13px!important;line-height:1.5;color:#c4d0e4}.action-ack input{width:15px!important;height:15px;margin:2px 0!important;flex-shrink:0;accent-color:#b5c3ff}
+.action-ack,.history-dialog .action-ack{display:flex;align-items:flex-start;gap:8px;margin:14px 0!important;font-size:13px!important;line-height:1.5;color:#c4d0e4}.action-ack input{width:15px!important;height:15px;margin:2px 0!important;flex-shrink:0;accent-color:#b5c3ff}
 .action-error{font-size:13px;color:#efb1ba!important;line-height:1.5}.settings-context-actions{display:flex;justify-content:flex-end;margin:8px 0 10px}.settings-context-actions button{padding:6px 10px}
 .recover-task{color:#c3ceff!important}.compact-proof{color:#a5b5cd;font-size:12px}
 .fulltext-dialog{width:min(640px,calc(100vw - 24px))}.fulltext-dialog h2,.backup-dialog h2{font-size:18px}.fulltext-form{display:flex;gap:8px;margin:16px 0 10px}.fulltext-form input{min-width:0;flex:1;border:1px solid #49536b;border-radius:8px;background:#1d2330;color:#e0e7f5;padding:9px 10px;font:inherit;font-size:14px}.fulltext-form select{width:135px}.fulltext-form button,.backup-controls button,#backup-restore{flex-shrink:0;border:1px solid #495570;border-radius:8px;background:#303c55;color:#dee6f8;padding:8px 12px;font:inherit;font-size:13px;cursor:pointer}
@@ -650,7 +652,7 @@ body:not(.welcome-view) .message-label{min-height:24px;gap:8px;margin-bottom:8px
 body:not(.welcome-view) .message-label time{font-size:12px;max-width:48%;overflow-wrap:anywhere}
 body:not(.welcome-view) .user .message-label,body:not(.welcome-view) .user .message-body{margin-left:32px}
 body:not(.welcome-view) .user .message-body{padding:12px 16px;line-height:1.7;max-height:260px}
-body:not(.welcome-view) .markdown{line-height:1.75}
+body:not(.welcome-view) .markdown:not(.meeting-slot-text){line-height:1.75}
 body:not(.welcome-view) .markdown p{margin-bottom:10px}
 body:not(.welcome-view) .message-footer{margin-top:9px;gap:8px;line-height:1.5}
 body:not(.welcome-view) .task-progress{margin-top:7px}
@@ -714,43 +716,57 @@ body:not(.welcome-view) .run-status{grid-column:1/-1;grid-row:1;margin:0;padding
 :root[data-theme="light"] .provider-avatar--codex,
 :root[data-theme="light"] .provider-avatar--muse{background:transparent}
 .provider-avatar img,#messages .message-label>img{display:block;width:28px;height:28px;object-fit:contain;border-radius:8px}
+#messages .message-label>img{flex:0 0 28px}
+/* Agy artwork has 23px transparent padding per side in its 256px canvas.
+   Match its visible tile to the full-canvas Muse/Codex marks without changing layout slots. */
+#messages .message-label>img[src="/icon.svg"],.meeting-avatar[src="/icon.svg"]{transform:scale(1.219048);transform-origin:center}
 .codex-dispatch .message-body{white-space:pre-wrap;line-height:1.8;overflow-wrap:anywhere;color:var(--text)}
 .dispatch-turn-label{color:var(--muted);font-size:12px;font-weight:400}
 
 .muse-orb{width:28px;height:28px;border-radius:8px;background:transparent;overflow:hidden;flex-shrink:0}
-.muse-orb img{display:block;width:28px;height:28px;object-fit:contain}
+.muse-orb img{display:block;width:100%;height:100%;object-fit:contain}
 
 /* Independent meeting records share one compact, source-labelled timeline. */
-.meeting-card{border:1px solid var(--line);border-radius:15px;padding:16px 18px;background:var(--panel);min-width:0;overflow:hidden}
-.meeting-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.meeting-card{border:1px solid var(--line);border-radius:15px;padding:12px 14px;background:var(--panel);min-width:0;overflow:hidden}
+.meeting-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
 .meeting-heading>div{min-width:0;flex:1}.meeting-eyebrow{font-size:12px;color:var(--muted);line-height:1.5}
 .meeting-heading h2{font-size:17px;line-height:1.55;font-weight:600;margin:4px 0 0;overflow-wrap:anywhere;color:var(--text)}
 .meeting-state{font-size:12px;white-space:nowrap;border:1px solid var(--line);border-radius:20px;padding:3px 8px;color:var(--muted);line-height:1.5}
 .meeting-state--completed{color:var(--green)}.meeting-state--active{color:var(--accent)}.meeting-state--partial{color:#c9a365}
-.meeting-overview{display:flex;align-items:center;flex-wrap:wrap;gap:5px 13px;font-size:12px;color:var(--muted);margin:10px 0 0}.meeting-overview time{margin-left:auto}
-.meeting-round{border-top:1px solid var(--line);margin-top:13px;padding-top:12px}.meeting-round>h3{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:550;margin:0 0 9px;color:var(--text)}
+.meeting-overview{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;font-size:12px;color:var(--muted);margin:6px 0 0}.meeting-overview time{margin-left:auto}
+.meeting-roster{display:flex;align-items:center;flex-wrap:wrap;gap:3px 10px;min-width:0;max-width:100%}.meeting-roster-member{display:inline-flex;align-items:baseline;gap:4px;min-width:0;line-height:1.5;font-size:12px;overflow-wrap:anywhere}.meeting-roster-member strong{font-weight:500;color:var(--text)}.meeting-roster-status{color:var(--muted)}.meeting-roster-member:is(.meeting-roster-member--running,.meeting-roster-member--queued) .meeting-roster-status{color:var(--accent)}.meeting-roster-member:is(.meeting-roster-member--failed,.meeting-roster-member--interrupted,.meeting-roster-member--unavailable) .meeting-roster-status{color:#d5a293}:root[data-theme="light"] .meeting-roster-member:is(.meeting-roster-member--failed,.meeting-roster-member--interrupted,.meeting-roster-member--unavailable) .meeting-roster-status{color:#98533c}
+.meeting-round{border-top:1px solid var(--line);margin-top:8px;padding-top:7px}.meeting-round>h3{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:550;margin:0 0 6px;color:var(--text)}
 .meeting-round>h3>span{font-size:11px;font-variant-numeric:tabular-nums;color:var(--muted);font-weight:400}.meeting-round>h3>small{margin-left:auto;color:var(--muted);font-weight:400;font-size:12px}
-.meeting-progress-note{margin:8px 0 0;font-size:12px;line-height:1.6;color:var(--muted)}
-.meeting-round--future{margin-top:10px;padding-top:10px}.meeting-round--future>h3{margin:0;color:var(--muted)}
-.meeting-round-slots{display:flex;flex-direction:column;gap:12px}.meeting-slot{min-width:0}.meeting-slot-heading{display:flex;align-items:center;gap:8px;min-height:28px;font-size:13px;color:var(--text)}
-.meeting-slot-heading .provider-avatar,.meeting-avatar{width:24px;height:24px;flex-basis:24px;border-radius:7px}.meeting-slot-heading .provider-avatar img{width:24px;height:24px;border-radius:7px}.meeting-avatar{display:block;object-fit:contain}
+.meeting-progress-note{margin:6px 0 0;font-size:12px;line-height:1.6;color:var(--muted)}
+.meeting-round--future{margin-top:8px;padding-top:7px}.meeting-round--future>h3{margin:0;color:var(--muted)}
+.meeting-round-slots{display:flex;flex-direction:column;gap:9px}.meeting-slot{min-width:0}.meeting-slot-heading{display:flex;align-items:center;gap:8px;min-height:28px;font-size:13px;color:var(--text)}
+.meeting-slot-heading .provider-avatar,.meeting-avatar{width:24px;height:24px;flex-basis:24px;flex-shrink:0;border-radius:7px}.meeting-slot-heading .provider-avatar img{width:24px;height:24px;border-radius:7px}.meeting-avatar{display:block;object-fit:contain}
 .meeting-slot-heading strong{font-size:13px;font-weight:550}.meeting-host-label{font-size:11px;color:var(--muted);font-weight:400}
 .meeting-slot-state{margin-left:auto;font-size:12px;color:var(--muted);text-align:right}.meeting-slot--completed .meeting-slot-state{color:var(--green)}.meeting-slot--failed .meeting-slot-state,.meeting-slot--unavailable .meeting-slot-state{color:#d5a293}
-.meeting-slot-text{padding-left:32px;margin-top:7px;line-height:1.75}.meeting-slot-text>p:last-child{margin-bottom:0}.meeting-slot-detail{margin:6px 0 0 32px;color:var(--muted);font-size:12px;line-height:1.6;overflow-wrap:anywhere;white-space:pre-wrap}
-.meeting-slot-meta{display:flex;align-items:center;flex-wrap:wrap;gap:5px 12px;margin:6px 0 0 32px;color:var(--muted);font-size:11px;line-height:1.5}.meeting-slot-meta:empty{display:none}.meeting-slot-meta>span:empty{display:none}.meeting-slot-meta a{text-decoration:underline;text-underline-offset:2px}.meeting-slot-meta .copy-reply{font-size:11px;padding:0 2px}
+.meeting-slot-text{padding-left:32px;margin-top:5px;line-height:1.6}.meeting-slot-text>p:last-child{margin-bottom:0}.meeting-slot-detail{margin:4px 0 0 32px;color:var(--muted);font-size:12px;line-height:1.6;overflow-wrap:anywhere;white-space:pre-wrap}
+.meeting-slot-meta{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;margin:4px 0 0 32px;color:var(--muted);font-size:11px;line-height:1.5}.meeting-slot-meta:empty{display:none}.meeting-slot-meta>span:empty{display:none}.meeting-slot-meta a{text-decoration:underline;text-underline-offset:2px}.meeting-slot-meta .copy-reply{font-size:11px;padding:0 2px}
 .meeting-slot--pending .meeting-slot-meta{display:none}.meeting-slot--pending .meeting-slot-heading{opacity:.75}
-.meeting-footer{margin-top:15px;padding-top:11px;border-top:1px solid var(--line);color:var(--muted);font-size:11px;line-height:1.65;overflow-wrap:anywhere}
-.dispatch-details>summary{cursor:pointer;display:flex;gap:8px;align-items:flex-start;list-style:none;font-size:13px;line-height:1.7;color:var(--muted);white-space:normal;min-width:0}
+.meeting-footer{margin-top:10px;padding-top:8px;border-top:1px solid var(--line);color:var(--muted);font-size:11px;line-height:1.55;overflow-wrap:anywhere}
+.dispatch-details>summary{cursor:pointer;display:flex;gap:8px;align-items:flex-start;list-style:none;font-size:inherit;line-height:1.7;color:var(--muted);white-space:normal;min-width:0}
 .dispatch-details>summary::-webkit-details-marker{display:none}.dispatch-chevron{font-size:20px;line-height:1.1;flex:0 0 12px}.dispatch-details[open] .dispatch-chevron{transform:rotate(90deg)}
 .dispatch-preview{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;min-width:0;flex:1}.dispatch-expand-hint{font-size:11px;flex-shrink:0;color:var(--muted);padding-top:1px}.dispatch-details[open] .dispatch-preview{-webkit-line-clamp:1}.dispatch-full-text{margin-top:9px;white-space:pre-wrap;overflow-wrap:anywhere}.dispatch-details[open]>summary{margin-bottom:5px}
 :root[data-theme="light"] .meeting-state--partial{color:#86631f}:root[data-theme="light"] .meeting-slot--failed .meeting-slot-state,:root[data-theme="light"] .meeting-slot--unavailable .meeting-slot-state{color:#98533c}
-@media(max-width:740px){.meeting-card{padding:13px 12px;border-radius:12px}.meeting-heading h2{font-size:16px}.meeting-heading{gap:8px}.meeting-slot-text{padding-left:0}.meeting-slot-detail,.meeting-slot-meta{margin-left:0}.meeting-overview{gap:5px 10px}.meeting-footer{font-size:12px}.dispatch-details>summary{gap:6px}.dispatch-expand-hint{font-size:11px}}
+@media(max-width:740px){.meeting-card{padding:10px;border-radius:12px}.meeting-heading h2{font-size:16px}.meeting-heading{gap:8px}.meeting-slot-text{padding-left:0}.meeting-slot-detail,.meeting-slot-meta{margin-left:0}.meeting-overview{gap:4px 8px}.meeting-footer{font-size:12px}.dispatch-details>summary{gap:6px}.dispatch-expand-hint{font-size:11px}}
 
 .meetings-paging{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:5px 10px;margin:4px 0 8px;padding:4px 10px;font-size:12px;color:var(--muted)}.meetings-paging button{border:1px solid var(--line);border-radius:7px;padding:3px 8px;background:var(--panel);color:var(--text);font-size:12px;line-height:1.5}.meetings-paging button:disabled{opacity:.5}
 
 /* Focus and disclosures stay local to each meeting; no animated layout changes. */
-.meeting-heading-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}.meeting-focus-button,.meeting-focus-banner button{font-size:12px;line-height:1.5;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--muted);padding:3px 8px;white-space:nowrap}.meeting-focus-banner{display:flex;align-items:center;gap:10px;padding:7px 12px;margin:0 12px 5px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)}.meeting-focus-banner>span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.meeting-focus-banner button{color:var(--text)}.meeting-metrics{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted);line-height:1.6;margin-top:6px}.meeting-round-fold>summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;font-size:13px;line-height:1.7;color:var(--text)}.meeting-round-fold>summary::-webkit-details-marker{display:none}.meeting-round-fold>summary:before{content:'›';width:8px;color:var(--muted);font-size:18px;line-height:1}.meeting-round-fold[open]>summary:before{content:'⌄';font-size:14px}.meeting-round-fold>summary>small{margin-left:auto;font-size:12px;color:var(--muted)}.meeting-round-number{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}.meeting-round-fold[open]>.meeting-round-slots{margin-top:10px}.meeting-summary--ready{padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}.meeting-text-fold{margin:7px 0 0 32px}.meeting-text-fold>summary{display:flex;gap:9px;align-items:flex-start;list-style:none;cursor:pointer;font-size:13px;line-height:1.7;color:var(--muted)}.meeting-text-fold>summary::-webkit-details-marker{display:none}.meeting-text-fold>summary>span{flex:1;min-width:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}.meeting-text-fold>summary>small{flex-shrink:0;font-size:11px;padding-top:2px}.meeting-text-fold[open]>.meeting-slot-text{padding-left:0}.meeting-slot-usage{overflow-wrap:anywhere;max-width:100%}@media(max-width:740px){.meeting-text-fold{margin-left:0}.meeting-heading-actions{max-width:130px}.meeting-focus-banner{margin:0 6px 4px;padding:5px 6px}.meeting-metrics{gap:3px 10px}.meeting-summary--ready{padding:10px}}
+.meeting-heading-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}.meeting-focus-button,.meeting-focus-banner button{font-size:12px;line-height:1.5;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--muted);padding:3px 8px;white-space:nowrap}.meeting-focus-banner{display:flex;align-items:center;gap:8px;padding:5px 10px;margin:0 10px 4px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)}.meeting-focus-banner>span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.meeting-focus-banner button{color:var(--text)}.meeting-metrics{display:flex;flex-wrap:wrap;gap:3px 10px;font-size:12px;color:var(--muted);line-height:1.5;margin-top:4px}.meeting-round-fold>summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;font-size:13px;line-height:1.7;color:var(--text)}.meeting-round-fold>summary::-webkit-details-marker{display:none}.meeting-round-fold>summary:before{content:'›';width:8px;color:var(--muted);font-size:18px;line-height:1}.meeting-round-fold[open]>summary:before{content:'⌄';font-size:14px}.meeting-round-fold>summary>small{margin-left:auto;font-size:12px;color:var(--muted)}.meeting-round-number{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}.meeting-round-fold[open]>.meeting-round-slots{margin-top:7px}.meeting-summary--ready{padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}.meeting-text-fold{margin:5px 0 0 32px}.meeting-text-fold>summary{display:flex;gap:9px;align-items:flex-start;list-style:none;cursor:pointer;font-size:13px;line-height:1.7;color:var(--muted)}.meeting-text-fold>summary::-webkit-details-marker{display:none}.meeting-text-fold>summary>span{flex:1;min-width:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}.meeting-text-fold>summary>small{flex-shrink:0;font-size:11px;padding-top:2px}.meeting-text-fold[open]>.meeting-slot-text{padding-left:0}.meeting-slot-usage{overflow-wrap:anywhere;max-width:100%}@media(max-width:740px){.meeting-text-fold{margin-left:0}.meeting-heading-actions{max-width:130px}.meeting-focus-banner{margin:0 6px 4px;padding:5px 6px}.meeting-metrics{gap:3px 8px}.meeting-summary--ready{padding:8px}}
 
 .meeting-action-dialog{max-width:520px}.meeting-action-dialog header{display:flex;align-items:center;justify-content:space-between;gap:10px}.meeting-action-dialog header h2{margin:0;font-size:17px}.meeting-action-dialog header button{border:0;background:transparent;color:var(--muted);font-size:24px}.meeting-action-dialog p{line-height:1.6;font-size:13px;overflow-wrap:anywhere}.meeting-action-status{color:var(--muted);font-size:12px!important}.meeting-action-dialog textarea{display:block;width:100%;min-height:64px;resize:vertical;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px;margin:6px 0 10px;font-size:13px}.meeting-action-detail:empty{display:none}.meeting-action-detail a{display:inline-block;color:var(--accent);text-decoration:underline;font-size:13px;padding:5px 0}.meeting-action-dialog .action-ack{font-size:12px;line-height:1.6}
 
 .meeting-slot--pending .meeting-slot-meta:has([data-meeting-action]){display:flex}
+
+/* Session actions stay beside the session tabs, outside the chat transcript. */
+.session-actions-wrap{position:relative;flex:0 0 auto}
+.session-actions-menu{position:absolute;z-index:40;top:calc(100% + 5px);right:0;width:190px;max-width:calc(100vw - 24px);padding:5px;border:1px solid var(--line);border-radius:10px;background:var(--panel);box-shadow:0 8px 24px #0003;transform:translateX(var(--session-menu-shift,0px))}
+.session-toolbar .session-actions-menu [role="menuitem"]{display:block;width:100%;min-height:32px;padding:7px 9px;border:0;border-radius:6px;background:transparent;color:var(--text);font-size:13px;line-height:1.4;text-align:left;white-space:normal;overflow-wrap:anywhere}
+.session-toolbar .session-actions-menu [role="menuitem"]:hover,.session-toolbar .session-actions-menu [role="menuitem"]:focus-visible{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--text)}
+
+/* Renaming uses double-click; the toolbar button names its only action. */
+.session-toolbar #session-rename{font-size:12px;line-height:1.25;min-height:27px;padding:3px 8px}

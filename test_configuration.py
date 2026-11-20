@@ -117,6 +117,24 @@ class ConfigurationTests(unittest.TestCase):
         with self.assertRaises(ConflictError):self.apply(doc,preview)
         self.assertEqual(self.app.state['preferred_model'],ARGON)
 
+    def test_shared_smart_policy_roundtrip_and_legacy_document_preservation(self):
+        self.app.set_global_model_policy('text', {'enabled':True,'models':[ARGON,FLASH]}, 0)
+        doc=self.document()
+        self.assertEqual(doc['settings']['global']['global_model_policy']['text']['models'],[ARGON,FLASH])
+        doc['settings']['global']['global_model_policy']['image']={'enabled':False,'models':[FLASH]}
+        self.apply(doc,window=False)
+        self.assertEqual(self.app.state['global_model_policy']['image'],{'enabled':False,'models':[FLASH]})
+        legacy=self.document();legacy['settings']['global'].pop('global_model_policy')
+        before=copy.deepcopy(self.app.state['global_model_policy'])
+        self.apply(legacy,window=False)
+        self.assertEqual(self.app.state['global_model_policy'],before)
+        invalid=self.document();invalid['settings']['global']['global_model_policy']['text']['models']=['missing-model']
+        with self.assertRaises(ValueError):self.preview(invalid,False)
+        invalid=self.document();invalid['settings']['global']['global_model_policy']['text']['models']=[True]
+        with self.assertRaises(ValueError):validate_configuration(invalid)
+        invalid=self.document();invalid['settings']['global']['global_model_policy']['audio']={'enabled':True}
+        with self.assertRaises(ValueError):validate_configuration(invalid)
+
     def test_multi_ai_import_targets_selected_thread_and_preserves_pauses(self):
         self.app.set_multi_ai_collaboration(self.conv['id'], {'codex_thread_id':THREAD,
             'enabled':False, 'providers':{'muse':{'enabled':True},'agy':{'enabled':False}}})

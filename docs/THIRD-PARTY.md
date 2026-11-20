@@ -11,3 +11,7 @@ Mac/Linux 包不包含 Python；使用者自行安装受支持的运行环境与
 本项目自有源码按所有者明确选择采用 MIT，见根目录 LICENSE。第三方许可不会随本项目选择而改变。
 
 来源：[CPython Windows](https://www.python.org/downloads/windows/)、[pywinpty](https://github.com/andfoy/pywinpty)、[psutil](https://github.com/giampaolo/psutil)。
+
+## QUDAD roundtable design reference
+
+[QUDAD-ENT/agy-roundtable](https://github.com/QUDAD-ENT/agy-roundtable), MIT, commit `b2cc2c75292eaee48cf3e7f8aea80bf4193e65d9`: stage separation and bounded shared-evidence design reference only. This candidate implements its own helper; no upstream code or assets were copied. OpenScience integration is deferred.

@@ -14,6 +14,25 @@ const escape=s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').rep
  const done={...meeting,status:'completed',phase:'finished',slots:meeting.slots.map(s=>({...s,status:'completed',text:s.stage==='summary'?'Final verified conclusion':'Actual '+s.provider+' '+s.stage}))};
  const partial={...done,status:'partial',slots:done.slots.map(s=>s.provider==='muse'&&s.stage==='review'?{...s,status:'unavailable',text:'',detail:'No project browser session'}:s)};
  assert.match(ctx.meetingProgressNote(partial),/部分完成.*Muse 缺席.*非全员共识/,'summary-first still identifies the missing provider without unfolding discussion');
+ const rosterStates={pending:'待组织',sending:'发送待核对',waiting:'等待回复',queued:'排队',running:'处理中',cancelling:'正在停止',completed:'已回复',failed:'失败',unavailable:'缺席',cancelled:'已取消',interrupted:'已中断'};
+ for(const [status,label] of Object.entries(rosterStates)){
+  const stageMeeting={...meeting,slots:meeting.slots.map(s=>s.provider==='agy'&&s.stage==='proposal'?{...s,status}:s)};
+  const roster=ctx.meetingRosterHTML(stageMeeting);assert.match(roster,new RegExp('data-roster-provider="agy"[^>]*aria-label="Agy：提案'+label),'current proposal status is explicit: '+status);
+  assert.match(roster,new RegExp('<span class="meeting-roster-status">'+label+'</span>'),'visible state: '+status);
+ }
+ const staged={...meeting,phase:'review',slots:meeting.slots.map(s=>({...s,status:s.stage==='proposal'?'failed':s.provider==='agy'&&s.stage==='review'?'running':'pending'}))};
+ assert.match(ctx.meetingRosterHTML(staged),/aria-label="Agy：互评处理中"/,'active review reports current phase rather than prior failure');
+ const summarizing={...done,status:'active',phase:'summary',slots:done.slots.map(s=>s.stage==='summary'?{...s,status:'running',text:''}:s)};
+ assert.match(ctx.meetingRosterHTML(summarizing),/aria-label="Codex：总结处理中"/,'only the host has a summary task');
+ assert.match(ctx.meetingRosterHTML(summarizing),/aria-label="Muse：提案已回复；互评已回复"[^>]*><strong>Muse<\/strong><span class="meeting-roster-status">已回复<\/span>/,'non-host reports completed rounds instead of a nonexistent pending summary');
+ const hiddenFailure={...done,slots:done.slots.map(s=>s.provider==='codex'&&s.stage==='proposal'?{...s,status:'failed',text:''}:s)};
+ assert.match(ctx.meetingRosterHTML(hiddenFailure),/data-roster-provider="codex"[^>]*aria-label="Codex：提案失败；互评已回复；总结已回复"[^>]*><strong>Codex<\/strong><span class="meeting-roster-status">失败<\/span>/,'successful host conclusion never hides its failed proposal');
+ assert.match(ctx.meetingRosterHTML(partial),/data-roster-provider="muse"[^>]*aria-label="Muse：提案已回复；互评缺席"[^>]*><strong>Muse<\/strong><span class="meeting-roster-status">缺席<\/span>/,'finished roster reports actual absence even with a completed host summary');
+ assert.match(ctx.meetingRosterHTML({...done,slots:done.slots.map(s=>s.provider==='agy'&&s.stage==='proposal'?{...s,status:'interrupted'}:s)}),/meeting-roster-member--interrupted[^>]*data-roster-provider="agy"/,'finished interrupted outcome remains visible');
+ assert.match(ctx.meetingRosterHTML({...meeting,slots:[]}),/meeting-roster-status">待核对<\/span>/,'missing evidence does not imply task completion or organization');
+ assert.doesNotMatch(ctx.meetingRosterHTML({...meeting,participants:[...meeting.participants,'<img src=x onerror=1>'],slots:[...meeting.slots,slot('agy','proposal','<script>')]}),/<script>|<img src=x/,'unknown provider or status cannot become markup');
+ assert.match(ctx.panelMeetingHTML(staged),/class="meeting-roster" role="list" aria-label="本场参与状态"/,'roster occupies the old participant-name position in the overview');
+
  assert.match(ctx.meetingTextHTML(done,{...done.slots.at(-1),text:'Conclusion '.repeat(40)},'summary-test'),/meeting-text-fold/,'a long conclusion leaves room for the meeting and composer');
  let html=ctx.panelMeetingHTML(done);assert.ok(html.indexOf('主持结论')<html.indexOf('独立提案'),'host conclusion is before the closed discussion');assert.match(html,/data-meeting-part="round:proposal">/,'finished proposal defaults collapsed');assert.doesNotMatch(html,/data-meeting-part="round:proposal" open/);
  ctx.rememberMeetingDisclosure(mid,'round:proposal',true);html=ctx.panelMeetingHTML({...done,revision:'new-native-progress'});assert.match(html,/data-meeting-part="round:proposal" open/,'explicit expansion survives subsequent snapshot render');assert.doesNotMatch(ctx.panelMeetingHTML({...done,id:'b'.repeat(32)}),/data-meeting-part="round:proposal" open/,'round expansion never leaks into another meeting');ctx.rememberMeetingDisclosure(mid,'round:proposal',false);assert.doesNotMatch(ctx.panelMeetingHTML(done),/data-meeting-part="round:proposal" open/);

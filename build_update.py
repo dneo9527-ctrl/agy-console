@@ -8,6 +8,9 @@ from update_bootstrap import FILES, version_key
 
 
 def build(app_dir,out,target):
+    release = Path(__file__).with_name('release.json')
+    if release.is_file() and json.loads(release.read_text()).get('program_updates_allowed') is False:
+        raise ValueError('Program-only updates are disabled for this complete-package upgrade')
     app_dir=Path(app_dir).resolve();out=Path(out).resolve();out.mkdir(parents=True,exist_ok=True)
     if target not in ('macos-arm64','macos-x64','windows-x64','linux-arm64','linux-x64'):raise ValueError('Unsupported platform target')
     version=(app_dir/'VERSION').read_text(encoding='utf-8').strip();version_key(version)

@@ -8,6 +8,28 @@ DEFAULT_ORDER = [DEFAULT_MODEL, 'gemini-3.8-flash-high', 'claude-sonnet-5-5-medi
                  'gemini-4-hydrogen-high', 'gemini-3.8-flash-medium', 'claude-sonnet-5-5-high']
 
 
+def clean_global_model_policy(value):
+    from quota_failover import clean_fallback
+    if not isinstance(value, dict) or set(value) - {'text', 'image'}:
+        raise ValueError('全局智能选择需分别设置文字或生图。')
+    result = {}
+    for kind, settings in value.items():
+        if not isinstance(settings, dict) or set(settings) - {'enabled', 'models'}:
+            raise ValueError('全局智能选择包含无效设置。')
+        result[kind] = clean_fallback(settings)
+    return result
+
+
+def model_selection_settings(snapshot, conversation=None, kind='text'):
+    """Resolve legacy/window preferences and a shared, kind-specific smart list."""
+    conversation = conversation or {}
+    preferences = conversation.get('model_preferences') or {}
+    shared = snapshot.get('global_model_policy') or {}
+    preferred = preferences[kind] if kind in preferences else '' if kind in shared else snapshot.get('preferred_model', '')
+    settings = shared[kind] if kind in shared else (conversation.get('fallback_preferences') or {}).get(kind) or {}
+    return preferred or '', settings
+
+
 def model_family(model):
     return re.sub(r'-(minimal|low|medium|high|xhigh|max)$', '', model)
 
@@ -93,16 +115,15 @@ def select_turn_model(snapshot, turn, verified_images=(), retry=False):
 
 def window_model_resolution(snapshot, conversation, kind='text', verified_images=()):
     """Read-only forecast. Never changes a saved preference or fixes a queued model."""
-    preferences = conversation.get('model_preferences') or {}
-    preferred = preferences[kind] if kind in preferences else snapshot.get('preferred_model', '')
-    settings = (conversation.get('fallback_preferences') or {}).get(kind) or {}
+    preferred, settings = model_selection_settings(snapshot, conversation, kind)
+    shared = kind in (snapshot.get('global_model_policy') or {})
     enabled = settings.get('enabled', True)
     result = {'requested_model': preferred or '', 'effective_model': '', 'fallback_enabled': enabled,
               'automatic': False, 'error': '', 'checked_at': (snapshot.get('health', {}).get('account') or {}).get('checked_at')}
     try:
         model = preferred
         if not model:
-            allowed = settings.get('models') if enabled else None
+            allowed = settings.get('models') if enabled or shared else None
             if kind == 'image' and allowed is None:
                 allowed = list(verified_images)
             candidates = candidate_models(snapshot, kind, allowed=allowed)
@@ -112,7 +133,7 @@ def window_model_resolution(snapshot, conversation, kind='text', verified_images
             model = candidates[0]
         if enabled or not preferred:
             turn = {'model': model, 'kind': kind}
-            if enabled and 'models' in settings:
+            if (enabled or shared) and 'models' in settings:
                 turn['fallback_models'] = settings['models']
             model = select_turn_model(snapshot, turn, verified_images)
         elif model not in {m['id'] for m in snapshot.get('health', {}).get('models', [])}:
@@ -129,12 +150,16 @@ def default_model(snapshot, conversation=None, kind='text'):
     available = [m['id'] for m in health.get('models', []) if isinstance(m, dict) and isinstance(m.get('id'), str)]
     preferences = (conversation or {}).get('model_preferences') or {}
     scoped = kind in preferences
-    preferred = preferences[kind] if scoped else snapshot.get('preferred_model')
+    preferred, settings = model_selection_settings(snapshot, conversation, kind)
     if preferred:
         if preferred not in available:
             raise ValueError(('本窗口' if scoped else '全局默认') + '模型当前不可用，请在网页重新选择。')
         return preferred
-    candidates = candidate_models(snapshot, kind)
+    shared = kind in (snapshot.get('global_model_policy') or {})
+    allowed = settings.get('models') if shared else None
+    if shared and kind == 'image' and allowed is None:
+        allowed = list(snapshot.get('verified_image_models') or [])
+    candidates = candidate_models(snapshot, kind, allowed=allowed)
     if candidates:
         return candidates[0]
     if not available:
