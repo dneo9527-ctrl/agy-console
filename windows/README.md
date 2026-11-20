@@ -1,4 +1,4 @@
-> **preview.16 及更早须使用完整 setup 或完整便携包升级到 preview.23；保留原 data，先关闭工具。禁止使用 program-only ZIP 或更新 feed 代替。**
+> **preview.23 及更早须使用完整 setup 或完整便携包升级到 preview.24；保留原 data，先关闭工具。禁止使用 program-only ZIP 或更新 feed 代替。**
 
 # Agy 控制台 · Windows x64
 

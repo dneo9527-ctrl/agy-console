@@ -1,6 +1,6 @@
 # 安装 Codex 配套 Skill
 
-本版完整包和独立 Skill 包同时包含 `agy-console` 配套入口与严格对应的 `external-ai-team` preview.6 九文件版本。二者均需显式安装；程序更新不会改写 Codex home。多 AI 提供方开关／受控前台启动由后者按当前聊天策略读取，明确圆桌模式下的活跃任务由后者按独立会议流程组织。
+本版完整包和独立 Skill 包同时包含 `agy-console` 配套入口与严格对应的 `external-ai-team` preview.7 九文件版本。二者均需显式安装；程序更新不会改写 Codex home。多 AI 提供方开关／受控前台启动由后者按当前聊天策略读取，明确圆桌模式下的活跃任务由后者按独立会议流程组织。
 
 面板负责运行任务，`agy-console` Skill 负责指导 Codex 在当前聊天中调用面板。完整源码、Mac/Linux 源码预览和 Windows 完整包均包含 Skill、分发脚本和安装工具。仅打开网页不会让闲置的 Codex 自动执行工作。
 
@@ -30,7 +30,7 @@ python3 scripts/install_codex_skill.py --codex-home /path/to/codex-home
 
 Skill 固定连接到安装时选择的面板目录与 Python。移动面板、更换运行时或更新 Skill 后，重新运行安装器刷新连接。只替换带本工具安装标记的同名 Skill，旧副本保留为备份；遇到其他来源的同名 Skill 或链接目录会停止。
 
-Release 中的 `AgyConsole-0.1.0-preview.23-codex-skill.zip` 适合已有兼容面板的用户。完整解压后，将下面命令的路径换成现有面板目录；不要直接把模板复制进 Codex 的 skills 目录：
+Release 中的 `AgyConsole-0.1.0-preview.24-codex-skill.zip` 适合已有兼容面板的用户。完整解压后，将下面命令的路径换成现有面板目录；不要直接把模板复制进 Codex 的 skills 目录：
 
 ```sh
 python3 scripts/install_codex_skill.py --console-root /path/to/AgyConsole --enable-default

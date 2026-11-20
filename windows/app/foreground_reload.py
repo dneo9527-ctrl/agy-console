@@ -5,7 +5,7 @@ PROXY_KEYS = ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
               'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy')
 REQUIRED_FILES = ('VERSION', 'release-source.json', 'update_bootstrap.py', 'software_updates.py', 'server.py', 'bridge.py', 'task_queue.py', 'task_progress.py', 'collaboration_review.py', 'foreground_reload.py',
                   'account_status.py', 'activity_monitor.py', 'resources.py', 'proxy_env.py', 'headless_compat.py',
-                  'model_policy.py', 'multi_ai_collaboration.py', 'quota_failover.py', 'conversation_sessions.py', 'image_files.py', 'settings_insights.py',
+                  'model_policy.py', 'multi_ai_collaboration.py', 'roundtable_workspace.py', 'quota_failover.py', 'conversation_sessions.py', 'image_files.py', 'settings_insights.py',
                   'panel_actions.py', 'panel_backups.py', 'transcript_export.py', 'index.html', 'app.js', 'panel_actions.js', 'style.css', 'icon.svg')
 
 

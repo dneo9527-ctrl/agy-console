@@ -53,7 +53,9 @@ from multi_ai_collaboration import (Coordination, default_policy_path, launcher_
                                     validate_roundtable, patch_roundtable, roundtable_plan, roundtable_prompt,
                                     roundtable_message_request, validate_roundtable_messages,
                                     new_meeting, validate_meetings, record_meeting_event,
-                                    link_meeting_turn, meeting_view, meeting_summary, meeting_context)
+                                    link_meeting_turn, meeting_view, meeting_summary, meeting_context,
+                                    roundtable_workspace_preferences, patch_roundtable_workspace_preferences,
+                                    roundtable_presets, meeting_workspace)
 
 ROOT = Path(__file__).resolve().parent
 APP_VERSION = (ROOT / 'VERSION').read_text(encoding='utf-8').strip()
@@ -552,6 +554,11 @@ class Console:
             except ValueError:
                 pass  # Preserve malformed state for diagnostics; its plan fails closed.
             value['roundtable_plan'] = roundtable_plan(value)
+            value['roundtable_presets'] = roundtable_presets()
+            try:
+                value['roundtable_workspace_preferences'] = roundtable_workspace_preferences(conv)
+            except ValueError:
+                value['roundtable_workspace_error'] = '圆桌预设待核对；原设置已保留。'
         return value
 
     def multi_ai_policy(self, thread_id):
@@ -695,6 +702,49 @@ class Console:
             if meeting is None:
                 raise KeyError('本聊天没有这场圆桌。')
             return meeting_context(conv, meeting, stage, provider)
+
+    def meeting_workspace(self, cid, mid):
+        """Read actual saved meeting materials only when the user asks to see them."""
+        with self.lock:
+            conv = self.conversation(cid)
+            if not conv or not conv.get('codex_thread_id'):
+                raise KeyError('固定聊天不存在。')
+            record = next((item for item in validate_meetings(conv) if item['id'] == mid), None)
+            if record is None:
+                raise KeyError('本聊天没有这场圆桌。')
+            return meeting_workspace(conv, record)
+
+    def set_roundtable_workspace_preferences(self, cid, body):
+        """Save next-meeting presentation guidance without changing permissions."""
+        with self.lock:
+            if self.stopping or self.maintenance:
+                raise ConflictError('服务暂时不能保存圆桌预设。')
+            conv = self.conversation(cid)
+            if not conv or not conv.get('codex_thread_id'):
+                raise ValueError('请进入当前 Codex 固定聊天。')
+            updated = patch_roundtable_workspace_preferences(conv, body)
+            if conv.get('roundtable_workspace_preferences') == updated:
+                return copy.deepcopy(updated)
+            existed = 'roundtable_workspace_preferences' in conv
+            previous = copy.deepcopy(conv.get('roundtable_workspace_preferences'))
+            old_stamp = conv.get('updated_at')
+            conv.update(roundtable_workspace_preferences=updated, updated_at=now())
+            try:
+                write_json(self.file, self.state)
+                self._touch(conv)
+            except Exception:
+                if existed:
+                    conv['roundtable_workspace_preferences'] = previous
+                else:
+                    conv.pop('roundtable_workspace_preferences', None)
+                conv['updated_at'] = old_stamp
+                try:
+                    write_json(self.file, self.state)
+                except Exception:
+                    pass
+                self._touch(conv)
+                raise
+            return copy.deepcopy(updated)
 
     def persist_meetings(self, conv, records, stamp):
         """Content-only transaction; policy mirror and credentials are untouched."""
@@ -1140,7 +1190,7 @@ class Console:
         value=validate_configuration(document);settings=value['settings'];window=settings['window']
         if apply_window and (window is None or not cid or not self.conversation(cid)):
             raise ValueError('请先进入目标聊天，或取消导入窗口设置。')
-        if apply_window and 'roundtable' in window and not self.conversation(cid).get('codex_thread_id'):
+        if apply_window and any(key in window for key in ('roundtable', 'roundtable_workspace_preferences')) and not self.conversation(cid).get('codex_thread_id'):
             raise ValueError('圆桌主持配置只能导入已绑定 Codex 的固定聊天。')
         available={m['id'] for m in self.health['models']}
         selected=[settings['global']['preferred_model']]
@@ -1193,6 +1243,8 @@ class Console:
                     migrate_collaboration(window)
                     if 'roundtable' in settings['window']:
                         window['roundtable'] = dict(copy.deepcopy(settings['window']['roundtable']), codex_thread_id=window['codex_thread_id'])
+                    if 'roundtable_workspace_preferences' in settings['window']:
+                        window['roundtable_workspace_preferences'] = dict(copy.deepcopy(settings['window']['roundtable_workspace_preferences']), codex_thread_id=window['codex_thread_id'])
                 candidate['conversations']=[window if row['id']==cid else row for row in original['conversations']]
             try:
                 # The updater and task workers cannot observe a half-applied import.
@@ -1462,7 +1514,7 @@ class Console:
                     'features': {'quota': True, 'codex_binding': True, 'light_history': True, 'resources': True, 'resource_summary': True, 'context_insights': True, 'window_models': True,
                                  'windows_portable': os.name == 'nt', 'task_recovery': True, 'context_compaction': True, 'history_search': True, 'panel_backups': True, 'account_switch': os.name != 'nt', 'account_sync': True, 'panel_auto_open': True,
                                  'session_groups': True, 'conversation_versions': True, 'proxy_environment': True,
-                                  'gpt_collaboration': True, 'multi_ai_collaboration': True, 'console_startup': True, 'roundtable_host': True, 'roundtable_messages': True, 'roundtable_meetings': True, 'roundtable_context': True, 'roundtable_meeting_actions': True, 'roundtable_actions': True, 'current_turn_results': True, 'global_model': True,
+                                  'gpt_collaboration': True, 'multi_ai_collaboration': True, 'console_startup': True, 'roundtable_host': True, 'roundtable_messages': True, 'roundtable_meetings': True, 'roundtable_context': True, 'roundtable_workspace': True, 'roundtable_presets': True, 'roundtable_decisions': True, 'roundtable_meeting_actions': True, 'roundtable_actions': True, 'current_turn_results': True, 'global_model': True,
                                   'collaboration_history': True, 'verified_api_recovery': True,
                                   'quota_failover': True, 'global_model_policy': True, 'model_resolution': True, 'configuration_transfer': True, 'software_updates': True, 'collaboration_results': True, 'queue_priority': True, 'foreground_reload': bool(self.reload_callback)},
                     'console_startup': self.console_startup_info(),
@@ -2341,6 +2393,16 @@ class Handler(BaseHTTPRequestHandler):
                 return
             except (OSError, ValueError):
                 return self.respond(404, {'error': '备份文件不可用。'})
+        match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/meetings/([a-f0-9]{32})/workspace', path)
+        if match:
+            try:
+                if query:
+                    raise ValueError('材料查看无需附加参数。')
+                return self.respond(200, app.meeting_workspace(match[1], match[2]))
+            except ValueError as exc:
+                return self.respond(400, {'error': str(exc)})
+            except KeyError as exc:
+                return self.respond(404, {'error': str(exc)})
         match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/meetings/([a-f0-9]{32})/context', path)
         if match:
             try:
@@ -2580,6 +2642,9 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/multi-ai-collaboration', path)
         if match:
             return 200, app.set_multi_ai_collaboration(match[1], body)
+        match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/roundtable-workspace-preferences', path)
+        if match:
+            return 200, app.set_roundtable_workspace_preferences(match[1], body)
         match = re.fullmatch(r'/api/conversations/([a-f0-9]{32})/roundtable', path)
         if match:
             return 200, app.set_roundtable(match[1], body)

@@ -13,6 +13,7 @@ const escape=s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').rep
  const ctx={URL,URLSearchParams,PAGE_SIZE:20,escape,timeLabel:s=>s,duration:s=>Math.floor(s)+'s',codeCopies:new Map(),conversationMeta:()=>conv,activeId:'chat',conversationPages:new Map(),sessionGroups:()=>false,pageCacheKey:id=>id};vm.createContext(ctx);
  vm.runInContext(between('function markdown(source','function conversationMeta'),ctx);ctx.inline=escape;
  vm.runInContext(between('function pageTag','function pruneConversationPages'),ctx);
+ vm.runInContext(between('function roundtableHostLabel','function roundtableAvailability'),ctx);
  vm.runInContext(between('function providerAvatarHTML','const expandedTaskProgress'),ctx);
  assert.equal(ctx.roundtableMeetings(conv).length,1,'Muse proposal does not require a completed or even created Agy turn');
  let html=ctx.panelMeetingHTML(first);assert.match(html,/Review &lt;layout&gt; &amp; output/);assert.match(html,/Muse actual &lt;reply&gt;/);assert.match(html,/原会话 ↗/);assert.match(html,/noopener noreferrer/);assert.match(html,/待发起/);assert.doesNotMatch(html,/已连接|会议已通过/);

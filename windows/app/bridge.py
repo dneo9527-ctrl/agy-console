@@ -17,6 +17,7 @@ UUID = re.compile(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}')
 BUSY = {'queued', 'running', 'cancelling'}
 from model_policy import DEFAULT_MODEL, default_model
 from multi_ai_collaboration import validate_roundtable, roundtable_plan
+from roundtable_workspace import PRESET_IDS, validate_workspace_preferences, validate_frozen_workspace
 
 
 def multi_ai_metadata(conversation, thread_id, features):
@@ -76,6 +77,43 @@ def roundtable_metadata(conversation, thread_id, features):
             or type(plan.get('ready')) is not bool or plan != expected):
         raise ValueError('圆桌主持或参与计划无法核实，未派发。')
     return value, json.loads(json.dumps(plan))
+
+
+def workspace_metadata(conversation, thread_id, features):
+    """Advertised preset metadata must belong to this chat; never invent defaults."""
+    if features.get('roundtable_workspace') is not True:
+        return None
+    if (not isinstance(conversation, dict) or conversation.get('codex_thread_id') != thread_id
+            or not isinstance(conversation.get('id'), str)
+            or not re.fullmatch(r'[a-f0-9]{32}', conversation['id'])):
+        raise ValueError('圆桌预设绑定与当前确切聊天不匹配。')
+    preferences = validate_workspace_preferences(
+        conversation.get('roundtable_workspace_preferences'), thread_id)
+    presets = conversation.get('roundtable_presets')
+    if (not isinstance(presets, list) or len(presets) != len(PRESET_IDS)
+            or any(not isinstance(item, dict) for item in presets)
+            or tuple(item.get('id') for item in presets) != PRESET_IDS):
+        raise ValueError('圆桌协作预设目录无法核实，未输出其他聊天的设置。')
+    for preset in presets:
+        validate_frozen_workspace({'schema_version': 1, 'preset': preset,
+                                   'deduplicate_exact': preferences['deduplicate_exact']})
+    return {'roundtable_workspace_preferences': preferences,
+            'roundtable_presets': json.loads(json.dumps(presets))}
+
+
+def checked_meeting_workspace(value, thread_id, meeting_id):
+    """Inspection is scoped to a real saved meeting, without reconstructing inputs."""
+    if (not isinstance(value, dict) or type(value.get('schema_version')) is not int
+            or value['schema_version'] != 1 or value.get('codex_thread_id') != thread_id
+            or value.get('meeting_id') != meeting_id
+            or not isinstance(value.get('branch'), str)
+            or not re.fullmatch(r'[a-z][a-z0-9_-]{0,39}', value['branch'])
+            or not isinstance(value.get('materials'), list)
+            or not isinstance(value.get('contexts'), list)
+            or not isinstance(value.get('usage'), dict)
+            or not isinstance(value.get('decisions'), dict)):
+        raise ValueError('返回的会议材料与当前聊天或会议不匹配，未输出材料。')
+    return value
 
 
 class TokenParser(HTMLParser):
@@ -173,6 +211,8 @@ def main():
     parser.add_argument('--meeting-event', help='Record one actual meeting event from JSON; starts no model')
     parser.add_argument('--meeting-view', help='Read one exact meeting ID, or list recent meetings; starts no model')
     parser.add_argument('--meeting-context', help='Read stage-scoped evidence for one exact meeting; starts no model or panel')
+    parser.add_argument('--meeting-workspace', help='Read actual saved meeting materials and frozen inputs; starts no model or panel')
+    parser.add_argument('--roundtable-preset', choices=PRESET_IDS, help='With --ensure, save guidance for new meetings only; changes no permissions, models or host')
     parser.add_argument('--meeting-provider', choices=('codex', 'agy', 'muse', 'claude'), help='Explicit frozen recipient for --meeting-context only')
     parser.add_argument('--meeting', help='Link this Agy dispatch to an existing independent meeting ID')
     parser.add_argument('--meeting-stage', choices=('proposal', 'review', 'summary'), help='Frozen stage for --meeting dispatch or --meeting-context inspection')
@@ -189,11 +229,13 @@ def main():
         parser.error('--auto-start 仅用于 --ensure，不会执行启动入口。')
     if (args.host or args.collaboration_mode) and not args.ensure:
         parser.error('--host 和 --collaboration-mode 仅用于 --ensure，不会开始会议。')
+    if args.roundtable_preset and not args.ensure:
+        parser.error('--roundtable-preset 仅用于 --ensure，只保存新会议预设。')
     if args.ensure and (args.task_file or args.import_result or args.stage_import):
         parser.error('--ensure 只读或保存偏好，不能混入任务派发/导入。')
     if args.auto_open and not args.ensure:
         parser.error('--auto-open 仅用于 --ensure，不会启动模型。')
-    controls = [args.meeting_create, args.meeting_event, args.meeting_view, args.meeting_context]
+    controls = [args.meeting_create, args.meeting_event, args.meeting_view, args.meeting_context, args.meeting_workspace]
     if sum(bool(value) for value in controls) > 1:
         parser.error('会议创建、记录和读取请分别执行。')
     if args.meeting_context:
@@ -204,6 +246,9 @@ def main():
             parser.error('会议上下文只读，不接受标题或任务超时设置。')
     elif args.meeting_provider:
         parser.error('--meeting-provider 仅用于 --meeting-context，不会改变提供方开关。')
+    if args.meeting_workspace and (not re.fullmatch(r'[a-f0-9]{32}', args.meeting_workspace)
+                                   or args.title or args.timeout != 600):
+        parser.error('--meeting-workspace 只读取明确会议ID，不接受标题或任务超时设置。')
     if not args.meeting_context and bool(args.meeting) != bool(args.meeting_stage):
         parser.error('--meeting 和 --meeting-stage 需一起用于任务派发。')
     if args.meeting and (not re.fullmatch(r'[a-f0-9]{32}', args.meeting)
@@ -216,6 +261,20 @@ def main():
                 or args.model or args.out or args.branch or args.branch_title or args.no_wait
                 or args.meeting or (args.meeting_stage and not args.meeting_context) or args.kind != 'text'):
             parser.error('会议记录操作不启动模型，不能与任务或偏好操作混用。')
+        if args.meeting_workspace:
+            client = Client(args.url)
+            conv = client.bind(args.thread_id)
+            if client.features.get('roundtable_workspace') is not True:
+                raise ValueError('本场实际材料需从原前台控制台加载新版后台。')
+            if (not isinstance(conv, dict) or conv.get('codex_thread_id') != args.thread_id
+                    or not isinstance(conv.get('id'), str)
+                    or not re.fullmatch(r'[a-f0-9]{32}', conv['id'])):
+                raise ValueError('固定绑定与当前确切聊天不匹配，未读取其他会话。')
+            result = client.request('/api/conversations/' + conv['id'] + '/meetings/'
+                                    + args.meeting_workspace + '/workspace')
+            print(json.dumps(checked_meeting_workspace(result, args.thread_id,
+                                                       args.meeting_workspace), ensure_ascii=False))
+            return 0
         if args.meeting_context:
             client = Client(args.url)
             conv = client.bind(args.thread_id)
@@ -261,6 +320,10 @@ def main():
         conv = client.bind(args.thread_id)
         if not client.features.get('roundtable_meetings'):
             raise ValueError('独立圆桌记录需从原前台控制台加载新版后台。')
+        if args.meeting_create and 'preset' in body and client.features.get('roundtable_presets') is not True:
+            raise ValueError('新会议预设需从原前台控制台加载新版后台。')
+        if args.meeting_event and 'decisions' in body and client.features.get('roundtable_decisions') is not True:
+            raise ValueError('结构化主持结论需从原前台控制台加载新版后台；未丢弃条目后改发普通总结。')
         base = '/api/conversations/' + conv['id'] + '/meetings'
         if args.meeting_view:
             result = client.request(base + ('' if args.meeting_view == 'list' else '/' + args.meeting_view))
@@ -345,10 +408,20 @@ def main():
                 raise ValueError('自动打开开关需先载入新版后台。')
             result = client.request('/api/conversations/' + conv['id'] + '/auto-open', {'enabled': args.auto_open == 'on'})
             conv['auto_open_activity'] = result['enabled']
-        if args.collaboration or args.provider or args.auto_start or args.host or args.collaboration_mode:
+        if args.roundtable_preset:
+            if client.features.get('roundtable_presets') is not True or client.features.get('roundtable_workspace') is not True:
+                raise ValueError('新会议预设需先从原前台入口载入新版后台。')
+            workspace_metadata(conv, args.thread_id, client.features)
+            updated = client.request('/api/conversations/' + conv['id'] + '/roundtable-workspace-preferences',
+                                     {'codex_thread_id': args.thread_id, 'preset': args.roundtable_preset})
+            validate_workspace_preferences(updated, args.thread_id)
+            if updated['preset'] != args.roundtable_preset:
+                raise ValueError('返回的圆桌预设与请求不一致，未报告保存成功。')
+        if args.collaboration or args.provider or args.auto_start or args.host or args.collaboration_mode or args.roundtable_preset:
             conv = client.bind(args.thread_id, args.title)
         multi = multi_ai_metadata(conv, args.thread_id, client.features)
         meeting, plan = roundtable_metadata(conv, args.thread_id, client.features)
+        workspace = workspace_metadata(conv, args.thread_id, client.features)
         lane = (conv.get('branches') or {}).get(args.branch) if args.branch else None
         print(json.dumps({'bound':True, 'codex_thread_id':args.thread_id, 'console_conversation_id':conv['id'],
                           'agy_id':(lane or {}).get('agy_id') if args.branch else conv['agy_id'],
@@ -361,6 +434,10 @@ def main():
                           'roundtable_host_supported':bool(client.features.get('roundtable_host')),
                           'roundtable_meetings_supported':bool(client.features.get('roundtable_meetings')),
                           'roundtable_context_supported':bool(client.features.get('roundtable_context')),
+                          'roundtable_workspace_supported':client.features.get('roundtable_workspace') is True,
+                          'roundtable_presets_supported':client.features.get('roundtable_presets') is True,
+                          'roundtable_decisions_supported':client.features.get('roundtable_decisions') is True,
+                          **(workspace or {}),
                           'meeting_summaries':conv.get('meeting_summaries', []),
                           **({'roundtable':meeting, 'roundtable_plan':plan} if meeting is not None else {}),
                           'console_startup_supported':bool(client.features.get('console_startup')),

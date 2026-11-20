@@ -10,7 +10,7 @@ vm.createContext(ctx);vm.runInContext(between('function orderedModels','function
 ctx.renderModelSelection({models},a);assert.equal(nodes.model.value,'flash');
 nodes['task-kind'].value='image';ctx.renderModelSelection({models},a);assert.equal(nodes.model.value,'argon');
 current=b;ctx.renderModelSelection({models},b);assert.equal(nodes.model.value,'__global__');
-nodes['task-kind'].value='text';ctx.renderModelSelection({models},b);assert.equal(nodes.model.value,'');
+nodes['task-kind'].value='text';ctx.renderModelSelection({models},b);assert.equal(nodes.model.value,'__global__','legacy automatic preference displays the single global smart entry');assert.equal(b.model_preferences.text,'','render does not rewrite stored legacy preference');assert.equal((nodes.model.innerHTML.match(/全局智能选择/g)||[]).length,1);assert.doesNotMatch(nodes.model.innerHTML,/沿用全局|智能选择（按额度）/);
 ctx.snapshot.preferred_model='flash';current=a;ctx.renderModelSelection({models},a);assert.equal(nodes.model.value,'flash');
 nodes['task-kind'].value='image';ctx.renderModelSelection({models},a);assert.equal(nodes.model.value,'argon','global change cannot overwrite image choice');
 (async()=>{

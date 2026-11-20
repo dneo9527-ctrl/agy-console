@@ -1,8 +1,8 @@
-> **升级门槛：preview.16 及更早 → preview.23 必须先使用完整包。** 旧稳定 bootstrap 不接受新模块 `transcript_export.py`，且普通程序包不会更新 bootstrap。关闭原工具、保留数据后完整升级；本版不发布 program ZIP 或 updates feed。
+> **升级门槛：preview.23 及更早 → preview.24 必须先使用完整包。** 旧稳定 bootstrap 不接受新模块 `transcript_export.py`，且普通程序包不会更新 bootstrap。关闭原工具、保留数据后完整升级；本版不发布 program ZIP 或 updates feed。
 
 # 安装、备份与更新
 
-## preview.16 及更早升级到 preview.23
+## preview.23 及更早升级到 preview.24
 
 本版新增运行模块，必须使用完整安装／源码包；旧 .16 及更早的 program-only 更新白名单无法接受本次模块。默认不提供 program.zip 或自动更新清单，不能用旧更新器代替完整升级。
 
@@ -10,7 +10,7 @@ Windows：先关闭原前台终端及其子任务，再运行本版完整安装�
 
 Mac/Linux：先按原面板备份功能导出历史，关闭前台终端；把本版完整源码包解压到可写的新目录。要沿用数据时，在旧工具已退出后自行备份并复制旧 data 到新目录的 data，再使用新目录的启动入口。不要复制旧程序文件来覆盖新增模块，也不要删除数据来强装。官方 CLI 登录由官方客户端继续管理，本包不携带登录。
 
-配套 Skill 中保存的连接路径不会随目录自动改变；显式重新连接 agy-console，并按 [Skill 说明](CODEX-SKILL.md) 安装随附 external-ai-team preview.6 九文件版。安装外部 Skill 会拒绝覆盖已有同名目标，不修改审批或提供方偏好。
+配套 Skill 中保存的连接路径不会随目录自动改变；显式重新连接 agy-console，并按 [Skill 说明](CODEX-SKILL.md) 安装随附 external-ai-team preview.7 九文件版。安装外部 Skill 会拒绝覆盖已有同名目标，不修改审批或提供方偏好。
 
 Mac/Linux 仍需 Python，Windows 完整包内置 Python；签名、公证、真实登录和跨平台硬件验收范围分别记录。实际版本与结果以最终 Release 为准。
 

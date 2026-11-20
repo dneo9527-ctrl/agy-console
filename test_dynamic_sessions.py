@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from bridge import Client
 from conversation_sessions import branch_for, normalize_sessions
@@ -36,6 +37,11 @@ print(json.dumps({'event':'result','result':{'status':'SUCCESS','response':reply
 
 class DynamicSessionTests(unittest.TestCase):
     def setUp(self):
+        # Session fixtures must not launch the installed public updater. Its
+        # asynchronous cache writes can outlive temporary-directory cleanup.
+        updater = patch('server.SoftwareUpdates.start')
+        updater.start()
+        self.addCleanup(updater.stop)
         self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name)
         self.binary=self.root/'fake-agy';self.binary.write_text(FAKE);self.binary.chmod(0o700)
         self.reader=lambda *_a,**_k:{'state':'unknown','email':None}

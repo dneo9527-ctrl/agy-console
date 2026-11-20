@@ -1,12 +1,9 @@
 {
-  "version": "0.1.0-preview.23",
+  "version": "0.1.0-preview.24",
   "stage": "publisher_candidate",
   "developer_reported": {
-    "python_coverage": 453,
-    "full_run": 452,
-    "final_updated_module": 10,
-    "javascript": 39,
-    "release_framework": 8,
+    "python": 501,
+    "javascript_groups": 40,
     "mac_live_roundtable": "7/7; separate developer evidence"
   },
   "publication_validation": "Final exact-commit Actions, Release and PLATFORM-VERIFICATION.json record actual performed checks",

@@ -387,7 +387,7 @@ function splitModelSelection(sourceId,familyId,speedId){
   const source=$(sourceId),family=$(familyId),speed=$(speedId);if(!source||!family||!speed)return;
   const models=orderedModels(snapshot.health?.models||[],uiSettings.modelOrder),groups=modelFamilies(models),selected=source.value;
   const group=groups.find(g=>g.variants.some(m=>m.id===selected));
-  const specials=[...source.options].filter(o=>!models.some(m=>m.id===o.value)).map(o=>({value:o.value,label:o.value===''?'智能选择':o.text,disabled:o.disabled}));
+  const specials=[...source.options].filter(o=>!models.some(m=>m.id===o.value)).map(o=>({value:o.value,label:o.value===''||o.value==='__global__'?'全局智能选择':o.text,disabled:o.disabled}));
   const available=id=>[...source.options].some(o=>o.value===id&&!o.disabled);
   const options=[...specials,...groups.map(g=>({value:'family:'+g.key,label:g.label,disabled:!g.variants.some(m=>available(m.id))}))];
   const html=options.map(o=>`<option value="${escape(o.value)}"${o.disabled?' disabled':''}>${escape(o.label)}</option>`).join('');
@@ -418,21 +418,17 @@ function syncComposerModelPickers(){splitModelSelection('model','model-family','
 function renderModelSelection(health,conv){
   if(snapshot.service?.features?.window_models){
     const target=typeof composerConversation==='function'?composerConversation():conv,kind=currentModelKind(),wanted=scopedModelValue(target,kind),models=orderedModels(health.models||[],uiSettings.modelOrder);
-    const inherited=wanted==='__global__'?(target?.model_resolution?.[kind]||snapshot.model_resolution?.[kind]):snapshot.model_resolution?.[kind];
-    const resolution=inherited?.requested_model===globalModelPreference(kind)?inherited:null,effective=resolution?.effective_model,resolvedModel=models.find(m=>m.id===effective);
-    const usable=resolvedModel&&!(snapshot.blocked_models||[]).includes(effective)&&!quotaForModel(effective,health).exhausted;
-    const globalLabel=usable?modelParts(resolvedModel).label:resolution&&!health.checking?'暂无可用模型':'待确认';
-    const options=[{id:'__global__',label:'沿用全局（'+globalLabel+'）'},{id:'',label:'本窗口智能选择'},...models];
+    const options=[{id:'__global__',label:'全局智能选择'},...models];
     if(wanted&&wanted!=='__global__'&&!models.some(m=>m.id===wanted))options.push({id:wanted,label:wanted+'（暂不可用）',disabled:true});
     const html=options.map(m=>`<option value="${escape(m.id)}"${m.disabled?' disabled':''}>${escape(m.label)}</option>`).join('');
     if($('model').dataset.options!==html){$('model').innerHTML=html;$('model').dataset.options=html;}
-    $('model').value=wanted;$('model').setAttribute('aria-label','本窗口'+(kind==='image'?'生图':'文字')+'模型');
+    $('model').value=wanted===''?'__global__':wanted;$('model').setAttribute('aria-label','本窗口'+(kind==='image'?'生图':'文字')+'模型');
     const trigger=$('model-family-trigger');if(trigger)trigger.setAttribute('aria-label','本窗口'+(kind==='image'?'生图':'文字')+'模型');
     return;
   }
   const supported=snapshot.service?.features?.global_model===true,stamp=snapshot.preferred_model_updated_at;
   if(supported&&stamp&&stamp!==lastServerModelStamp&&!modelSaving){preferredModel=snapshot.preferred_model||'';lastServerModelStamp=stamp;modelChoiceApplied=false;}
-  const models=orderedModels(health.models||[],uiSettings.modelOrder),options=[...(supported?[{id:'',label:'智能选择（按额度）'}]:[]),...models];
+  const models=orderedModels(health.models||[],uiSettings.modelOrder),options=[...(supported?[{id:'',label:'全局智能选择'}]:[]),...models];
   if(preferredModel&&!models.some(m=>m.id===preferredModel))options.push({id:preferredModel,label:preferredModel+(health.checking?'（等待检查）':'（暂不可用）'),disabled:true});
   const html=options.map(m=>`<option value="${escape(m.id)}"${m.disabled?' disabled':''}>${escape(m.label)}</option>`).join('');
   const old=$('model').value,changed=$('model').dataset.options!==html;
@@ -482,7 +478,7 @@ function renderModelQuota(health){
   const blocked=(snapshot.blocked_models||[]).includes(model);
   ring.dataset.tooltip=blocked?'该模型最近被 CLI 拒绝；共享额度有余额也不能证明它可用':percent===null?'共享额度读取中或暂未提供':`共享${q.bucket.endsWith('5h')?'5 小时':'每周'}额度 · 剩余 ${percent}% · 具体模型以实际调用为准`;
   if(blocked){$('quota-ring-value').textContent='!';ring.className='quota-ring low';$('quota-ring-fill').setAttribute('stroke-dasharray','0 100');}
-  const picker=$('model-family-trigger');if(picker){picker.removeAttribute('title');picker.dataset.tooltip=snapshot.service?.features?.window_models?'本窗口'+(currentModelKind()==='image'?'生图':'文字')+'：'+label+(selected==='__global__'?' · 沿用全局':selected?'':' · 智能选择'):selected?'全局默认：'+label:'全局默认：智能选择'+(model?' · 预计 '+label:'');}
+  const picker=$('model-family-trigger');if(picker){picker.removeAttribute('title');picker.dataset.tooltip=snapshot.service?.features?.window_models?'本窗口'+(currentModelKind()==='image'?'生图':'文字')+'：'+label+(selected==='__global__'||selected===''?' · 全局智能选择':''):selected?'全局默认：'+label:'全局智能选择'+(model?' · 预计 '+label:'');}
   ring.setAttribute('aria-label',blocked?'模型最近被拒绝，点击查看额度':`模型共享额度：${percent===null?'未知':percent+'%'}，点击查看`);
   const alternative=(health.models||[]).find(m=>m.id===availableQuotaModel(health)),unavailable=!!model&&!(health.models||[]).some(m=>m.id===model),warn=resolution?resolution.automatic||!!resolution.error||q.exhausted: q.exhausted||!model||unavailable;
   $('model-warning').hidden=!warn;
@@ -755,10 +751,12 @@ function syncMessageRows(view,rows){
       clearCodePrefix(old?.codePrefix);const template=document.createElement('template');template.innerHTML=row.html();
       const next=template.content.firstElementChild;if(!next)continue;
       const progressSummary=element?.querySelector?.('.task-progress > summary'),progressFocused=!!progressSummary&&progressSummary===document.activeElement,meetingFocused=element?.contains?.(document.activeElement)&&document.activeElement?.parentElement?.dataset?.meetingPart;
+      const meetingControl=element?.contains?.(document.activeElement)?['meetingFilter','meetingWorkspace','meetingWorkspaceRetry'].find(name=>document.activeElement?.dataset?.[name]!==undefined):null,meetingControlValue=meetingControl?document.activeElement.dataset[meetingControl]:null;
       next.dataset.renderKey=row.key;next.dataset.renderInstance=String(++renderInstance);
       if(element?.parentNode===container){container.insertBefore(next,element);element.remove();}
       if(progressFocused)next.querySelector('.task-progress > summary')?.focus({preventScroll:true});
       if(meetingFocused)next.querySelector('[data-meeting-part="'+meetingFocused+'"] > summary')?.focus({preventScroll:true});
+      if(meetingControl){const attr=meetingControl.replace(/[A-Z]/g,letter=>'-'+letter.toLowerCase());next.querySelector('[data-'+attr+'="'+meetingControlValue+'"]')?.focus({preventScroll:true});}
       element=next;renderedMessageRows.set(row.key,{element,signature:row.signature,codePrefix:row.codePrefix});changed=true;
     }
     const anchor=previous?previous.nextElementSibling:container.firstElementChild;
@@ -1065,6 +1063,30 @@ function roundtableOrganizationText(conv){
   const meetings=Array.isArray(conv.meeting_summaries)?conv.meeting_summaries:typeof roundtableMeetings==='function'?roundtableMeetings(conv):[],active=meetings.filter(item=>item.codex_thread_id===conv.codex_thread_id&&item.status==='active');
   return active.length?'允许圆桌协作 · '+active.length+' 场已组织':'允许圆桌协作 · 待组织';
 }
+let workspacePreferencePending=false;
+function roundtableWorkspacePreference(conv){
+  const value=conv?.roundtable_workspace_preferences,names=['schema_version','codex_thread_id','preset','deduplicate_exact'];
+  return value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===names.length&&names.every(name=>Object.hasOwn(value,name))&&value.schema_version===1&&value.codex_thread_id===conv.codex_thread_id&&['general','code_review','paper_review'].includes(value.preset)&&typeof value.deduplicate_exact==='boolean'?value:null;
+}
+function renderRoundtableWorkspaceSettings(owner){
+  const panel=$('roundtable-preset-control');if(!panel)return;
+  const supported=snapshot.service?.features?.roundtable_workspace===true,value=roundtableWorkspacePreference(owner),pending=typeof workspacePreferencePending!=='undefined'&&workspacePreferencePending;
+  panel.hidden=!supported;panel.dataset.conversation=owner?.id||'';panel.dataset.thread=owner?.codex_thread_id||'';
+  const error=$('roundtable-preset-error');if(error&&error.dataset.conversation!==owner?.id)error.hidden=true;
+  for(const button of document.querySelectorAll('[data-roundtable-preset]')){button.disabled=!online||!value||pending||collaborationPending||roundtableSaving();button.setAttribute('aria-pressed',String(value?.preset===button.dataset.roundtablePreset));}
+}
+async function setRoundtableWorkspacePreset(conv,preset){
+  if(!roundtableWorkspacePreference(conv)||!['general','code_review','paper_review'].includes(preset)||workspacePreferencePending||collaborationPending||roundtableSaving()||!online||snapshot.service?.features?.roundtable_workspace!==true)return;
+  const cid=conv.id,thread=conv.codex_thread_id;workspacePreferencePending=true;$('roundtable-preset-error').hidden=true;renderSettings();
+  try{
+    const saved=await api('/api/conversations/'+encodeURIComponent(cid)+'/roundtable-workspace-preferences',{codex_thread_id:thread,preset});
+    if(!roundtableWorkspacePreference({codex_thread_id:thread,roundtable_workspace_preferences:saved}))throw new Error('分工设置返回的聊天身份不匹配');
+    const current=conversationMeta(cid);if(current?.codex_thread_id===thread){current.roundtable_workspace_preferences=saved;const cached=conversationPages.get(pageCacheKey(cid));if(cached?.value?.codex_thread_id===thread)cached.value.roundtable_workspace_preferences=saved;}
+    toast('下场分工：'+{general:'讨论',code_review:'代码审查',paper_review:'论文评审'}[saved.preset]+'；已开始的会议保持原计划');
+  }catch(error){const text='下场分工未保存：'+error.message;toast(text);if(settingsOwner()?.id===cid){$('roundtable-preset-error').textContent=text;$('roundtable-preset-error').dataset.conversation=cid;$('roundtable-preset-error').hidden=false;}}
+  finally{workspacePreferencePending=false;renderSettings();}
+}
+
 function renderRoundtableSettings(owner){
   const state=roundtableState(owner),policy=multiAIState(owner),supported=snapshot.service?.features?.roundtable_host===true,bound=!!owner?.codex_thread_id;
   const disabled=!bound||!state||!policy||!online||collaborationPending||roundtableSaving()||!supported,host=$('roundtable-host-toggle');
@@ -1077,6 +1099,7 @@ function renderRoundtableSettings(owner){
   const reason=roundtableAvailability(owner,state),labels={assist_mode:'日常协作 · 主持偏好保留，按需请助手参与',master_paused:'总协作已暂停；主持与参与方选择保留',host_disabled:roundtableHostLabel(state?.host)+' 已暂停；先开启该提供方或换主持',no_external_participant:'尚未开启参与方；圆桌暂不派发',invalid_state:'圆桌设置待核实，暂不派发'};
   const people=policy?['Codex',...['agy','muse','claude'].filter(p=>policy.providers[p].enabled).map(roundtableHostLabel)]:[];
   $('roundtable-status').textContent=!bound?'进入本聊天固定页后选择主持':!supported?'主持设置需加载新版控制台':reason==='ready'?(roundtableOrganizationText(owner)||'会议计划')+' · 2 轮 · '+people.join('、'):labels[reason];
+  if(typeof renderRoundtableWorkspaceSettings==='function')renderRoundtableWorkspaceSettings(owner);
 }
 async function setRoundtablePreference(conv,patch){
   if(!conv?.codex_thread_id||!roundtableState(conv)||!multiAIState(conv)||collaborationPending||roundtableSaving()||!online||snapshot.service?.features?.roundtable_host!==true)return;
@@ -1103,7 +1126,7 @@ function renderMultiAISettings(owner){
     const control=$('provider-'+name);control.dataset.conversation=owner?.id||'';control.dataset.thread=owner?.codex_thread_id||'';
     control.disabled=!bound||!state||!online||collaborationPending||roundtableSaving()||!supported;control.setAttribute('aria-checked',String(state?.providers[name]?.enabled===true));control.textContent=state?.providers[name]?.enabled?'开':'关';
   }
-  $('multi-ai-note').textContent=!bound?'请进入本聊天固定入口后设置。':!supported?'请先加载新版控制台。':!state?'协作状态待核实，暂不派发。':!state.enabled?'总协作已暂停；提供方选择保留，已发送任务继续。':'Skill · 活跃任务按计划组织；开启仅保存许可，不会唤醒空闲 Codex。';
+  $('multi-ai-note').textContent=!bound?'请进入本聊天固定入口后设置。':!supported?'请先加载新版控制台。':!state?'协作状态待核实，暂不派发。':!state.enabled?'总协作已暂停；提供方选择保留，已发送任务继续。':'活跃任务按计划协作；开启不会唤醒空闲 Codex。';
 }
 function renderCollaborationControl(conv){
   const button=$('gpt-collaboration'),bound=!!conv?.codex_thread_id,state=multiAIState(conv),supported=snapshot.service?.features?.multi_ai_collaboration===true;
@@ -1572,6 +1595,105 @@ function rememberMeetingDisclosure(id,part,open){
   try{sessionStorage.setItem(meetingDisclosureStorageKey,JSON.stringify([...meetingDisclosureState]));}catch(error){}
 }
 function meetingDisclosureOpen(id,part,fallback=false){const key=id+':'+part;return meetingDisclosureState.has(key)?meetingDisclosureState.get(key):fallback;}
+const meetingProviderFilters=new Map();
+const meetingWorkspaceEntries=new Map();
+let meetingWorkspaceSequence=0;
+function meetingWorkspaceKey(meeting){return meeting.codex_thread_id+':'+meeting.id;}
+function meetingProviderFilter(meeting){const selected=meetingProviderFilters.get(meetingWorkspaceKey(meeting));return meeting.participants.includes(selected)?selected:'all';}
+function meetingViewControlsHTML(meeting){
+  const selected=meetingProviderFilter(meeting),supported=typeof snapshot!=='undefined'&&snapshot.service?.features?.roundtable_workspace===true,entry=meetingWorkspaceEntries.get(meetingWorkspaceKey(meeting));
+  return `<div class="meeting-toolbar"><div class="meeting-provider-filters" role="group" aria-label="筛选本场发言">${['all',...meeting.participants].map(provider=>`<button type="button" data-meeting-filter="${escape(provider)}" data-meeting-id="${escape(meeting.id)}" aria-pressed="${String(selected===provider)}" aria-label="${provider==='all'?'查看本场全部发言':'只看 '+roundtableHostLabel(provider)+' 的发言'}">${provider==='all'?'全部':roundtableHostLabel(provider)}</button>`).join('')}</div>${supported?`<button type="button" class="meeting-materials-toggle" data-meeting-workspace="${escape(meeting.id)}" aria-expanded="${String(entry?.open===true)}" aria-controls="meeting-workspace-${escape(meeting.id)}" data-tooltip="按需读取本场来源、冻结材料与已知用量">材料与上下文${entry?.open?' ▴':' ▾'}</button>`:''}</div>`;
+}
+function setMeetingProviderFilter(meetingId,provider){
+  const meeting=roundtableMeetings(active()).find(item=>item.id===meetingId);if(!meeting||provider!=='all'&&!meeting.participants.includes(provider))return;
+  const key=meetingWorkspaceKey(meeting);meetingProviderFilters.delete(key);if(provider!=='all')meetingProviderFilters.set(key,provider);
+  while(meetingProviderFilters.size>64)meetingProviderFilters.delete(meetingProviderFilters.keys().next().value);
+  render();document.querySelector('[data-meeting-filter="'+provider+'"][data-meeting-id="'+meetingId+'"]')?.focus({preventScroll:true});
+}
+function meetingDecisionSources(meeting,refs){
+  if(!Array.isArray(refs)||!refs.length||refs.length>12)return null;
+  const found=[],seen=new Set();
+  for(const ref of refs){
+    const slot=meeting.slots.find(item=>item.source_id&&item.source_id===ref?.source_id&&item.provider===ref.provider&&item.stage===ref.stage&&item.turn_id===ref.turn_id);
+    if(!slot||seen.has(ref.source_id)||!['proposal','review'].includes(slot.stage)||!['completed','failed','unavailable','cancelled','interrupted'].includes(slot.status))return null;
+    seen.add(ref.source_id);found.push(slot);
+  }
+  return found;
+}
+function meetingDecisionHTML(meeting){
+  const value=meeting.decisions,host=meeting.host||meeting.roundtable?.host,summary=meeting.slots.find(slot=>slot.stage==='summary');
+  if(!value||value.status!=='recorded'||value.host!==host||value.provider!==host||value.stage!=='summary'||summary?.status!=='completed'||value.source_id!==summary.source_id||value.turn_id!==summary.turn_id)return '';
+  const categories=[['suggested_adoption','建议采用'],['disagreements','分歧'],['needs_verification','待验证'],['next_steps','下一步']],sections=[];
+  for(const [key,label] of categories){
+    if(!Array.isArray(value[key])||value[key].length>16)return '';
+    const rows=[];
+    for(const item of value[key]){
+      const sources=meetingDecisionSources(meeting,item?.sources);if(typeof item?.text!=='string'||!item.text.trim()||item.text.length>1200||!sources)return '';
+      rows.push(`<li><p>${escape(item.text)}</p><div class="meeting-decision-sources">${sources.map(slot=>`<button type="button" data-meeting-reference="${escape(meeting.id)}" data-meeting-source="${escape(slot.source_id)}" data-tooltip="查看本场真实${slot.stage==='proposal'?'提案':'互评'}来源">${roundtableHostLabel(slot.provider)} · ${slot.stage==='proposal'?'提案':'互评'} ↗</button>`).join('')}</div></li>`);
+    }
+    sections.push(`<section class="meeting-decision-section"><h4>${label}</h4>${rows.length?'<ul>'+rows.join('')+'</ul>':'<p class="meeting-decision-empty">主持未列出</p>'}</section>`);
+  }
+  return `<section class="meeting-decisions" aria-label="本场主持建议与来源"><header><h3>${escape(roundtableHostLabel(host))} 的整理</h3><span>建议 ≠ 批准</span></header><div class="meeting-decision-grid">${sections.join('')}</div><p class="meeting-decision-note">仅展示主持显式提交的结论；引用来源不代表各方一致。</p></section>`;
+}
+function openMeetingReference(meetingId,sourceId){
+  const meeting=roundtableMeetings(active()).find(item=>item.id===meetingId),slot=meeting?.slots.find(item=>item.source_id===sourceId&&['proposal','review'].includes(item.stage));if(!slot)return;
+  meetingProviderFilters.delete(meetingWorkspaceKey(meeting));rememberMeetingDisclosure(meeting.id,'round:'+slot.stage,true);rememberMeetingDisclosure(meeting.id,'text:'+slot.provider+':'+slot.stage,true);render();
+  const target=document.getElementById('meeting-source-'+meeting.id+'-'+slot.provider+'-'+slot.stage);
+  // The normal state refresh deliberately reuses unchanged meeting rows. Open
+  // the retained details in place as well as saving their next-render state.
+  const round=target?.closest?.('details.meeting-round-fold'),text=target?.querySelector?.('details.meeting-text-fold');
+  if(round?.dataset.meetingDisclosure===meeting.id)round.open=true;
+  if(text?.dataset.meetingDisclosure===meeting.id)text.open=true;
+  target?.scrollIntoView({block:'center',behavior:'instant'});target?.focus({preventScroll:true});
+}
+function meetingWorkspaceValue(meeting,value){
+  return !!value&&value.schema_version===1&&value.meeting_id===meeting.id&&value.codex_thread_id===meeting.codex_thread_id&&value.branch===meeting.branch&&value.host===(meeting.host||meeting.roundtable?.host)&&Array.isArray(value.materials)&&value.materials.length<=9&&Array.isArray(value.contexts)&&value.contexts.length<=9&&Array.isArray(value.notes)&&value.notes.length<=8;
+}
+function meetingWorkspaceUsageHTML(metrics){
+  const usage=metrics?.usage_scope==='official_cli_turns'?metrics.usage:null,fields=[['input_tokens','CLI 输入'],['output_tokens','CLI 输出'],['cache_read_tokens','缓存读取'],['total_tokens','CLI 合计']],number=value=>typeof value==='number'&&Number.isFinite(value)&&value>=0?Number(value).toLocaleString():'未提供';
+  const unknown=Array.isArray(metrics?.unknown_providers)?metrics.unknown_providers.filter(provider=>['codex','muse','claude'].includes(provider)).map(roundtableHostLabel):[];
+  return `<div class="meeting-workspace-usage">${fields.map(([key,label])=>`<div><span>${label}</span><strong>${number(usage?.[key])}</strong></div>`).join('')}</div><p class="meeting-workspace-note">${unknown.length?escape(unknown.join('、'))+' 用量未知。':''}缓存数按官方报告单列，不额外累加到合计。${metrics?.unmeasured_turn_count?'另有 '+Number(metrics.unmeasured_turn_count)+' 轮 CLI 未计量。':''}</p>`;
+}
+function meetingWorkspaceMaterialHTML(meeting,item){
+  const slot=meeting.slots.find(slot=>slot.provider===item?.provider&&slot.stage===item?.stage&&slot.source_id===item?.source_id&&slot.turn_id===item?.turn_id);if(!slot)return '';
+  const source=roundtableSourceURL(item),stage={proposal:'提案',review:'互评',summary:'总结'}[item.stage],text=typeof item.text==='string'?item.text.slice(0,12000):'',detail=typeof item.detail==='string'?item.detail.slice(0,2000):'',chars=Number.isInteger(item.source_chars)&&item.source_chars>=0?item.source_chars:null;
+  return `<details class="meeting-material-record" data-meeting-disclosure="${escape(meeting.id)}" data-meeting-part="material:${escape(item.provider)}:${escape(item.stage)}"${meetingDisclosureOpen(meeting.id,'material:'+item.provider+':'+item.stage)?' open':''}><summary><span>${escape(roundtableHostLabel(item.provider))} · ${stage}</span><small>${chars===null?'原文长度未提供':chars.toLocaleString()+' 字符'}${item.truncated?' · 展示有截取':''}</small></summary>${text?'<pre>'+escape(text)+'</pre>':'<p class="meeting-workspace-note">'+escape(detail||'尚无实际发言正文')+'</p>'}<div class="meeting-material-links">${source?`<a href="${escape(source)}" target="_blank" rel="noopener noreferrer">原会话 ↗</a>`:''}${item.provider==='agy'&&item.turn_id?`<button type="button" data-meeting-original="${escape(meeting.id)}" data-meeting-turn="${escape(item.turn_id)}">原始任务 ↗</button>`:''}${item.source_id?`<span>来源 ${escape(item.source_id)}</span>`:''}</div></details>`;
+}
+function meetingWorkspaceContextHTML(meeting,item){
+  const slot=meeting.slots.find(slot=>slot.provider===item?.provider&&slot.stage===item?.stage&&slot.turn_id===item?.turn_id);if(!slot)return '';
+  const snapshot=item.snapshot,actual=item.state==='frozen'&&item.provenance==='cli_enqueue_snapshot'&&snapshot?.schema_version===1&&snapshot.meeting_id===meeting.id&&snapshot.codex_thread_id===meeting.codex_thread_id&&snapshot.branch===meeting.branch&&snapshot.stage===item.stage&&snapshot.provider==='agy'&&typeof snapshot.text==='string'&&snapshot.text.length<=12000&&Number.isInteger(snapshot.chars)&&snapshot.chars>=0;
+  const stage={proposal:'提案',review:'互评',summary:'总结'}[item.stage],labels={not_dispatched:'尚未派发',not_recorded:'输入未记录',invalid:'快照待核对'},label=actual?'冻结输入':labels[item.state]||'输入未记录',detail=typeof item.detail==='string'?item.detail.slice(0,2000):'';
+  const dedup=snapshot?.deduplication,duplicates=Number.isInteger(dedup?.reused_sources)&&dedup.reused_sources>=0?dedup.reused_sources:null;
+  return `<details class="meeting-material-record" data-meeting-disclosure="${escape(meeting.id)}" data-meeting-part="context:${escape(item.provider)}:${escape(item.stage)}"${meetingDisclosureOpen(meeting.id,'context:'+item.provider+':'+item.stage)?' open':''}><summary><span>${escape(roundtableHostLabel(item.provider))} · ${stage}</span><small>${label}</small></summary><p class="meeting-workspace-note">${escape(detail)}</p>${actual?`<pre>${escape(snapshot.text)}</pre><p class="meeting-workspace-note">本次新增材料 ${Number(snapshot.chars).toLocaleString()} 字符${snapshot.truncated?'；超出字符预算的材料已截取':''}${duplicates===null?'':'；精确重复来源 '+duplicates+' 项'}。官方会话历史另行保留。</p>`:''}</details>`;
+}
+function meetingWorkspaceHTML(meeting){
+  const entry=meetingWorkspaceEntries.get(meetingWorkspaceKey(meeting));if(!entry?.open)return '';
+  const id='meeting-workspace-'+meeting.id;
+  if(entry.pending)return `<section class="meeting-workspace" id="${escape(id)}" aria-label="本场材料与上下文" aria-busy="true"><p class="meeting-workspace-note" role="status">正在读取本场材料…</p></section>`;
+  if(entry.error)return `<section class="meeting-workspace" id="${escape(id)}" aria-label="本场材料与上下文"><p class="action-error" role="alert">${escape(entry.error)}</p><button type="button" data-meeting-workspace-retry="${escape(meeting.id)}">重新读取材料</button></section>`;
+  const value=entry.value;if(entry.revision!==(meeting.revision||meeting.updated_at)||!meetingWorkspaceValue(meeting,value))return `<section class="meeting-workspace" id="${escape(id)}"><p class="meeting-workspace-note">本场有新进展，材料尚未刷新。</p><button type="button" data-meeting-workspace-retry="${escape(meeting.id)}">读取最新材料</button></section>`;
+  return `<section class="meeting-workspace" id="${escape(id)}" aria-label="本场材料与上下文"><header><strong>本场材料与上下文</strong><span>${value.preset?'分工：'+escape(value.preset.label):'旧会议 · 未保存分工预设'}</span></header>${meetingWorkspaceUsageHTML(value.usage)}<h4>已记录的发言来源</h4>${value.materials.map(item=>meetingWorkspaceMaterialHTML(meeting,item)).join('')}<h4>各阶段实际输入</h4>${value.contexts.map(item=>meetingWorkspaceContextHTML(meeting,item)).join('')}<div class="meeting-workspace-notes">${value.notes.filter(note=>typeof note==='string').map(note=>'<p>'+escape(note.slice(0,1200))+'</p>').join('')}</div><p class="meeting-workspace-note">打开、折叠或筛选面板仅改变显示，不会压缩模型的上下文。</p><button type="button" class="meeting-workspace-refresh" data-meeting-workspace-retry="${escape(meeting.id)}">手动刷新材料</button></section>`;
+}
+async function toggleMeetingWorkspace(meetingId,force=false){
+  if(typeof snapshot==='undefined'||snapshot.service?.features?.roundtable_workspace!==true)return;
+  const conv=active(),meeting=roundtableMeetings(conv).find(item=>item.id===meetingId);if(!meeting||!conv?.id)return;
+  const key=meetingWorkspaceKey(meeting),revision=meeting.revision||meeting.updated_at,old=meetingWorkspaceEntries.get(key);
+  if(!force&&old?.open){old.open=false;render();return;}
+  if(!force&&old?.pending){old.open=true;render();return;}
+  if(!force&&old?.value&&old.revision===revision){old.open=true;render();return;}
+  const entry={open:true,pending:true,value:null,error:'',revision,sequence:++meetingWorkspaceSequence};meetingWorkspaceEntries.delete(key);meetingWorkspaceEntries.set(key,entry);
+  while(meetingWorkspaceEntries.size>24){const first=[...meetingWorkspaceEntries.keys()].find(cacheKey=>cacheKey!==key);if(first===undefined)break;meetingWorkspaceEntries.delete(first);}
+  render();
+  try{
+    const value=await api('/api/conversations/'+encodeURIComponent(conv.id)+'/meetings/'+encodeURIComponent(meeting.id)+'/workspace');
+    if(!meetingWorkspaceValue(meeting,value))throw new Error('材料返回的会议身份不匹配，未显示其他会话内容。');
+    if(meetingWorkspaceEntries.get(key)!==entry)return;entry.value=value;
+  }catch(error){if(meetingWorkspaceEntries.get(key)===entry)entry.error=error.status===404?'材料接口尚未加载，请空闲时在设置中重载更新。':'本场材料未读取：'+error.message;}
+  finally{
+    if(meetingWorkspaceEntries.get(key)===entry){entry.pending=false;const current=active();if(current?.id===conv.id&&current.codex_thread_id===meeting.codex_thread_id&&roundtableMeetings(current).some(item=>item.id===meeting.id))render();}
+  }
+}
+
 function meetingTextHTML(meeting,slot,prefix){
   if(!slot.text)return '';
   const body='<div class="meeting-slot-text markdown">'+markdown(slot.text,prefix)+'</div>';
@@ -1585,7 +1707,7 @@ function meetingMetricsHTML(meeting){
   const unknown=Array.isArray(metrics.unknown_providers)?metrics.unknown_providers.filter(p=>['muse','claude','codex'].includes(p)).map(p=>({muse:'Muse',claude:'Claude',codex:'Codex'}[p])):[];
   return `<div class="meeting-metrics"><span data-meeting-wall="${escape(meeting.id)}" data-tooltip="从本场创建到结束或当前的真实墙钟时间；并行发言不相加">整场 ${escape(duration(metrics.wall_seconds))}</span><span data-tooltip="仅合计官方 CLI 可确认的本轮用量；网页没有提供的用量不估算">${meeting.participants.includes('agy')?'Agy ':''}${total===null?'用量未提供':Number(total).toLocaleString()+' tokens'}${known?' · '+known+' 轮':''}</span>${unknown.length?`<span>${escape(unknown.join('、'))} 用量未知</span>`:''}${metrics.unmeasured_turn_count?'<span>另有 '+Number(metrics.unmeasured_turn_count)+' 轮未计量</span>':''}</div>`;
 }
-function meetingRenderSignature(meeting){return JSON.stringify(meeting,(key,value)=>['wall_seconds','measured_at','wait_seconds','queue_seconds','run_seconds'].includes(key)?undefined:value);}
+function meetingRenderSignature(meeting){const workspace=meetingWorkspaceEntries.get(meetingWorkspaceKey(meeting));return JSON.stringify([meeting,meetingProviderFilter(meeting),workspace?{open:workspace.open,pending:workspace.pending,error:workspace.error,revision:workspace.revision,sequence:workspace.sequence}:null],(key,value)=>['wall_seconds','measured_at','wait_seconds','queue_seconds','run_seconds'].includes(key)?undefined:value);}
 function meetingWallSeconds(meeting,now=Date.now()){
   const metrics=meeting.metrics;if(!metrics||typeof metrics.wall_seconds!=='number'||!Number.isFinite(metrics.wall_seconds)||metrics.wall_seconds<0)return null;
   if(metrics.ended_at||meeting.status!=='active')return metrics.wall_seconds;
@@ -1680,7 +1802,7 @@ function meetingSlotHTML(meeting,slot){
   const names={codex:'Codex',agy:'Agy',muse:'Muse',claude:'Claude'},host=meeting.host||meeting.roundtable?.host,labels={pending:'待发起',sending:'发送中 · 待确认',waiting:'等待回复',queued:'排队中',running:'执行中',cancelling:'正在停止',completed:'已回复',failed:'未完成',unavailable:'暂不可用',cancelled:'已取消',interrupted:'结果待核对'};
   const source=roundtableSourceURL(slot),clock=meetingSlotClock(slot),prefix='meeting-'+meeting.id+'-'+slot.provider+'-'+slot.stage;
   const body=meetingTextHTML(meeting,slot,prefix),detail=slot.detail||(slot.status==='sending'?'发送结果待核对；请打开原会话确认，暂勿重复发送。':'');
-  return `<section class="meeting-slot meeting-slot--${escape(slot.status)}" data-meeting-provider="${escape(slot.provider)}" data-meeting-stage="${escape(slot.stage)}"><div class="meeting-slot-heading">${slot.provider==='agy'?'<img class="meeting-avatar" src="/icon.svg" alt="">':providerAvatarHTML(slot.provider)}<strong>${names[slot.provider]}</strong>${slot.provider===host?'<small class="meeting-host-label">主持</small>':''}<span class="meeting-slot-state">${labels[slot.status]}</span></div>${body}${detail?`<p class="meeting-slot-detail">${escape(detail)}</p>`:''}<div class="meeting-slot-meta"><span>${slot.provider==='agy'&&slot.turn_id?'官方 CLI 记录':slot.text?'Codex 已同步真实发言':slot.status==='pending'?'等待当前 Codex 组织':''}</span>${clock?`<time data-meeting-clock="${escape(slot.provider+':'+slot.stage)}">${escape(clock)}</time>`:''}${meetingSlotUsageHTML(slot)}${meetingActionMarkup(meeting,slot)}${source?`<a href="${escape(source)}" target="_blank" rel="noopener noreferrer">原会话 ↗</a>`:''}${slot.provider==='agy'&&slot.turn_id?`<button type="button" class="copy-reply" data-meeting-original="${escape(meeting.id)}" data-meeting-turn="${escape(slot.turn_id)}">原始任务 ↗</button>`:''}${slot.text?`<button type="button" class="copy-reply" data-meeting-copy="${escape(meeting.id)}" data-meeting-provider="${escape(slot.provider)}" data-meeting-stage="${escape(slot.stage)}">复制发言</button>`:''}</div></section>`;
+  return `<section class="meeting-slot meeting-slot--${escape(slot.status)}" id="meeting-source-${escape(meeting.id)}-${escape(slot.provider)}-${escape(slot.stage)}" tabindex="-1" data-meeting-provider="${escape(slot.provider)}" data-meeting-stage="${escape(slot.stage)}"><div class="meeting-slot-heading">${slot.provider==='agy'?'<img class="meeting-avatar" src="/icon.svg" alt="">':providerAvatarHTML(slot.provider)}<strong>${names[slot.provider]}</strong>${slot.provider===host?'<small class="meeting-host-label">主持</small>':''}<span class="meeting-slot-state">${labels[slot.status]}</span></div>${body}${detail?`<p class="meeting-slot-detail">${escape(detail)}</p>`:''}<div class="meeting-slot-meta"><span>${slot.provider==='agy'&&slot.turn_id?'官方 CLI 记录':slot.text?'Codex 已同步真实发言':slot.status==='pending'?'等待当前 Codex 组织':''}</span>${clock?`<time data-meeting-clock="${escape(slot.provider+':'+slot.stage)}">${escape(clock)}</time>`:''}${meetingSlotUsageHTML(slot)}${meetingActionMarkup(meeting,slot)}${source?`<a href="${escape(source)}" target="_blank" rel="noopener noreferrer">原会话 ↗</a>`:''}${slot.provider==='agy'&&slot.turn_id?`<button type="button" class="copy-reply" data-meeting-original="${escape(meeting.id)}" data-meeting-turn="${escape(slot.turn_id)}">原始任务 ↗</button>`:''}${slot.text?`<button type="button" class="copy-reply" data-meeting-copy="${escape(meeting.id)}" data-meeting-provider="${escape(slot.provider)}" data-meeting-stage="${escape(slot.stage)}">复制发言</button>`:''}</div></section>`;
 }
 function meetingProgressNote(meeting){
   if(meeting.status==='partial'){
@@ -1697,7 +1819,8 @@ function meetingPartialDetail(meeting){
   return [['unavailable','缺席'],['failed','失败'],['cancelled','取消'],['interrupted','待核对']].map(([status,label])=>{const count=meeting.slots.filter(slot=>slot.status===status).length;return count?label+' '+count+' 项':'';}).filter(Boolean).join(' · ');
 }
 function meetingRoundHTML(meeting,stage,number,label){
-  const slots=meeting.slots.filter(slot=>slot.stage===stage),order=['proposal','review','summary'],future=order.indexOf(stage)>order.indexOf(meeting.phase)&&slots.every(slot=>slot.status==='pending'),ended=slots.every(slot=>['completed','failed','unavailable','cancelled','interrupted'].includes(slot.status)),replied=slots.filter(slot=>slot.status==='completed').length;
+  const selected=meetingProviderFilter(meeting),slots=meeting.slots.filter(slot=>slot.stage===stage&&(selected==='all'||slot.provider===selected));if(!slots.length)return '';
+  const order=['proposal','review','summary'],future=order.indexOf(stage)>order.indexOf(meeting.phase)&&slots.every(slot=>slot.status==='pending'),ended=slots.every(slot=>['completed','failed','unavailable','cancelled','interrupted'].includes(slot.status)),replied=slots.filter(slot=>slot.status==='completed').length;
   const heading=`<span class="meeting-round-number">${number}</span><span>${label}</span><small>${future?'待发起 · 前序结束后进行':replied+'/'+slots.length+' 已回复'}</small>`;
   if(future)return `<section class="meeting-round meeting-round--future" aria-label="${label}，等待前一阶段结束"><h3>${heading}</h3></section>`;
   if(stage!=='summary')return `<details class="meeting-round meeting-round-fold" data-meeting-disclosure="${escape(meeting.id)}" data-meeting-part="round:${stage}"${meetingDisclosureOpen(meeting.id,'round:'+stage,!ended)?' open':''}><summary>${heading}</summary><div class="meeting-round-slots">${slots.map(slot=>meetingSlotHTML(meeting,slot)).join('')}</div></details>`;
@@ -1716,7 +1839,7 @@ function meetingRosterHTML(meeting){
 }
 function panelMeetingHTML(meeting){
   const host=meeting.host||meeting.roundtable?.host,names={codex:'Codex',agy:'Agy',muse:'Muse',claude:'Claude'},states={active:'进行中',completed:'已完成',partial:'部分完成',cancelled:'已取消'},phases={proposal:'第一轮提案',review:'第二轮互评',summary:'主持总结',finished:'本场已结束'},summary=meeting.slots.find(slot=>slot.stage==='summary'),summaryFirst=summary?.status==='completed',stages=summaryFirst?[['summary','03','主持结论'],['proposal','01','独立提案'],['review','02','互评']]:[['proposal','01','独立提案'],['review','02','互评'],['summary','03','主持总结']];
-  return `<article class="message meeting-card" data-meeting-id="${escape(meeting.id)}"><header class="meeting-heading"><div><span class="meeting-eyebrow">圆桌会议 · 主持 ${names[host]}</span><h2>${escape(meeting.topic)}</h2></div><div class="meeting-heading-actions"><span class="meeting-state meeting-state--${escape(meeting.status)}">${states[meeting.status]}</span><button type="button" class="meeting-focus-button" data-meeting-focus="${escape(meeting.id)}">只看本场</button></div></header><div class="meeting-overview">${meetingRosterHTML(meeting)}<span>${phases[meeting.phase]||'阶段待核对'}</span><time>${escape(timeLabel(meeting.created_at))}</time></div>${meetingMetricsHTML(meeting)}${meetingProgressNote(meeting)?`<p class="meeting-progress-note">${escape(meetingProgressNote(meeting))}</p>`:''}${stages.map(stage=>meetingRoundHTML(meeting,...stage)).join('')}<footer class="meeting-footer">${meeting.status==='completed'?'各方两轮回复和主持总结已记录':meeting.status==='partial'?(meetingPartialDetail(meeting)||'含未完成')+'；以实际已收到的发言为准':meeting.status==='cancelled'?'本场已取消，已有发言保留':'尚在组织中；开关与待发起状态不代表已调用'} · 记录 #${escape(meeting.id.slice(0,8))}</footer></article>`;
+  return `<article class="message meeting-card" data-meeting-id="${escape(meeting.id)}"><header class="meeting-heading"><div><span class="meeting-eyebrow">圆桌 · ${names[host]} 主持 · ${escape(timeLabel(meeting.created_at))}</span><h2>${escape(meeting.topic)}</h2></div><div class="meeting-heading-actions"><span class="meeting-state meeting-state--${escape(meeting.status)}" data-tooltip="${escape(phases[meeting.phase]||'阶段待核对')}">${states[meeting.status]}</span><button type="button" class="meeting-focus-button" data-meeting-focus="${escape(meeting.id)}">只看本场</button></div></header><div class="meeting-overview">${meetingRosterHTML(meeting)}<span class="meeting-phase">${phases[meeting.phase]||'阶段待核对'}</span></div>${meetingMetricsHTML(meeting)}${meetingViewControlsHTML(meeting)}${meetingWorkspaceHTML(meeting)}${meetingDecisionHTML(meeting)}${meetingProgressNote(meeting)?`<p class="meeting-progress-note">${escape(meetingProgressNote(meeting))}</p>`:''}${stages.map(stage=>meetingRoundHTML(meeting,...stage)).join('')}<footer class="meeting-footer">${meeting.status==='completed'?'各方两轮回复和主持总结已记录':meeting.status==='partial'?(meetingPartialDetail(meeting)||'含未完成')+'；以实际已收到的发言为准':meeting.status==='cancelled'?'本场已取消，已有发言保留':'尚在组织中；开关与待发起状态不代表已调用'} · 记录 #${escape(meeting.id.slice(0,8))}</footer></article>`;
 }
 const expandedTaskProgress=new Map();
 function rememberProgressExpansion(id,open){
@@ -1883,6 +2006,7 @@ $('multi-ai-expand').addEventListener('click',()=>{multiAIExpanded=!multiAIExpan
 for(const name of ['agy','muse','claude'])$('provider-'+name).addEventListener('click',()=>{const button=$('provider-'+name),conv=conversationMeta(button.dataset.conversation);if(conv?.codex_thread_id===button.dataset.thread)return setMultiAIPreference(conv,{providers:{[name]:{enabled:multiAIState(conv)?.providers[name].enabled===false}}});});
 $('roundtable-host-toggle').addEventListener('click',()=>{if($('roundtable-host-toggle').disabled)return;roundtableHostsExpanded=!roundtableHostsExpanded;renderSettings();});
 document.querySelectorAll('[data-roundtable-host]').forEach(button=>button.addEventListener('click',()=>{const control=$('roundtable-host-toggle'),conv=conversationMeta(control.dataset.conversation);if(conv?.codex_thread_id===control.dataset.thread)return setRoundtablePreference(conv,{host:button.dataset.roundtableHost});}));
+document.querySelectorAll('[data-roundtable-preset]').forEach(button=>button.addEventListener('click',()=>{const panel=$('roundtable-preset-control'),conv=conversationMeta(panel.dataset.conversation);if(conv?.codex_thread_id===panel.dataset.thread)return setRoundtableWorkspacePreset(conv,button.dataset.roundtablePreset);}));
 $('roundtable-enabled').addEventListener('click',()=>{const control=$('roundtable-enabled'),conv=conversationMeta(control.dataset.conversation);if(conv?.codex_thread_id===control.dataset.thread)return setRoundtablePreference(conv,{mode:roundtableState(conv)?.mode==='roundtable'?'assist':'roundtable'});});
 $('console-startup-expand').addEventListener('click',()=>{consoleStartupExpanded=!consoleStartupExpanded;renderSettings();if(consoleStartupExpanded)loadConsoleStartup();});
 $('console-launcher-path').addEventListener('input',()=>{consoleLauncherDirty=true;});
@@ -1896,7 +2020,7 @@ document.querySelectorAll('[data-theme-choice]').forEach(b=>b.addEventListener('
 function renderGlobalModelSettings(){
   const row=$('global-model-row');if(row)row.hidden=snapshot.service?.features?.global_model_policy===true;
   const models=orderedModels(snapshot.health?.models||[],uiSettings.modelOrder),selected=snapshot.preferred_model||'',source=$('global-model-select');
-  let html='<option value="">智能选择（按额度）</option>'+models.map(m=>'<option value="'+escape(m.id)+'">'+escape(m.label)+'</option>').join('');
+  let html='<option value="">全局智能选择</option>'+models.map(m=>'<option value="'+escape(m.id)+'">'+escape(m.label)+'</option>').join('');
   if(selected&&!models.some(m=>m.id===selected))html+='<option disabled value="'+escape(selected)+'">'+escape(selected)+'（暂不可用）</option>';
   if(!modelSaving){if(source.innerHTML!==html)source.innerHTML=html;source.value=selected;}
   source.disabled=modelSaving||!online;
@@ -2131,7 +2255,7 @@ $('export').addEventListener('click',()=>exportSessionMarkdown());
 document.addEventListener('keydown',event=>{if(['panel-action-dialog','meeting-action-dialog','fulltext-dialog','backup-dialog','software-update-dialog','config-import-dialog'].some(id=>$(id)?.open)||openSelectId||$('bulk-dialog').open||$('session-dialog').open||$('related-dialog').open||$('collaboration-audit-dialog').open||$('task-queue-dialog').open||$('settings-dialog').open)return;if($('image-preview').open){if(event.key==='Escape'){event.preventDefault();closeImagePreview();}return;}if($('history-dialog').open)return;if(resourceExpanded&&event.key==='Escape'){event.preventDefault();closeResources(true);return;}if(accountExpanded&&event.key==='Escape'){event.preventDefault();accountExpanded=false;renderAccount();$(accountAnchor==='composer'?'quota-ring':'account-toggle').focus();return;}if(!$('history-menu').hidden){if(event.key==='Escape'){event.preventDefault();closeHistoryMenu();return;}if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();const buttons=[...$('history-menu').querySelectorAll('button:not([hidden]):not(:disabled)')],index=buttons.indexOf(document.activeElement);buttons[event.key==='Home'?0:event.key==='End'?buttons.length-1:(index+(event.key==='ArrowDown'?1:buttons.length-1))%buttons.length]?.focus();return;}}if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='k'){event.preventDefault();newConversation();}if(event.key==='Escape')setSidebarOpen(false);});
 const templates={review:'请审查以下研究方案，按「关键问题、依据、修改建议」给出意见。区分事实与假设，不编造参考文献。\n\n[在这里粘贴研究方案]',writing:'请润色下面的论文段落，保留原意和所有数据，不补造结果与引用。先给修改稿，再说明主要修改。\n\n[在这里粘贴论文段落]',code:'请审查下面的统计代码，重点检查分析单位、缺失值处理、数据泄漏和结果解释。指出具体位置并给出修正建议。\n\n[在这里粘贴代码]',image:'请生成一张图片，按以下要求返回实际图片文件。\n\n主题：[填写图片内容]\n风格：[如简洁示意图、插画、写实]\n用途：[如论文配图、演示文稿]\n比例：[如 1:1、16:9]'};
 document.querySelectorAll('[data-template]').forEach(button=>button.addEventListener('click',()=>{$('task-kind').value=button.dataset.template==='image'?'image':'text';updateTaskMode();$('prompt').value=templates[button.dataset.template];$('prompt').dispatchEvent(new Event('input'));render();$('prompt').focus();}));
-$('messages').addEventListener('click',event=>{const action=event.target.closest('[data-meeting-action]');if(action){openMeetingAction(action.dataset.meetingId,action.dataset.meetingProvider,action.dataset.meetingStage,action.dataset.meetingAction);return;}const focus=event.target.closest('[data-meeting-focus]');if(focus){setMeetingFocus(focus.dataset.meetingFocus);return;}const summary=event.target.closest('summary'),details=summary?.parentElement;if(details?.matches('details[data-meeting-disclosure]'))rememberMeetingDisclosure(details.dataset.meetingDisclosure,details.dataset.meetingPart,!details.open);});
+$('messages').addEventListener('click',event=>{const filter=event.target.closest('[data-meeting-filter]');if(filter){setMeetingProviderFilter(filter.dataset.meetingId,filter.dataset.meetingFilter);return;}const workspace=event.target.closest('[data-meeting-workspace],[data-meeting-workspace-retry]');if(workspace){toggleMeetingWorkspace(workspace.dataset.meetingWorkspace||workspace.dataset.meetingWorkspaceRetry,workspace.dataset.meetingWorkspaceRetry!==undefined);return;}const reference=event.target.closest('[data-meeting-reference]');if(reference){openMeetingReference(reference.dataset.meetingReference,reference.dataset.meetingSource);return;}const action=event.target.closest('[data-meeting-action]');if(action){openMeetingAction(action.dataset.meetingId,action.dataset.meetingProvider,action.dataset.meetingStage,action.dataset.meetingAction);return;}const focus=event.target.closest('[data-meeting-focus]');if(focus){setMeetingFocus(focus.dataset.meetingFocus);return;}const summary=event.target.closest('summary'),details=summary?.parentElement;if(details?.matches('details[data-meeting-disclosure]'))rememberMeetingDisclosure(details.dataset.meetingDisclosure,details.dataset.meetingPart,!details.open);});
 $('messages').addEventListener('toggle',event=>{const details=event.target;if(details.matches?.('details[data-progress-turn]')&&details.isConnected)rememberProgressExpansion(details.dataset.progressTurn,details.open);if(details.matches?.('details[data-dispatch-turn]')&&details.isConnected)rememberCodexPrompt(details.dataset.dispatchTurn,details.open);},true);
 $('messages').addEventListener('click',async event=>{let button=event.target.closest('[data-code],[data-reply],[data-roundtable-reply],[data-meeting-copy]');if(!button)return;const meeting=button.dataset.meetingCopy?roundtableMeetings(active()).find(item=>item.id===button.dataset.meetingCopy):null;let text=button.dataset.code?codeCopies.get(button.dataset.code):meeting?meeting.slots.find(slot=>slot.provider===button.dataset.meetingProvider&&slot.stage===button.dataset.meetingStage)?.text:button.dataset.roundtableReply?roundtableMessages(active()).find(message=>message.id===button.dataset.roundtableReply)?.text:active()?.turns.find(t=>t.id===button.dataset.reply)?.response;try{await navigator.clipboard.writeText(text||'');toast('已复制');}catch(e){toast('复制不可用，请选择文本手动复制。');}});
 $('messages').addEventListener('click',event=>{const button=event.target.closest('[data-meeting-original][data-meeting-turn]');if(button)openMeetingTurn(button.dataset.meetingOriginal,button.dataset.meetingTurn);});

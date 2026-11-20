@@ -90,8 +90,8 @@ def main():
             require((installed / relative).read_bytes() == (source_root / name).read_bytes(),
                     'Installed payload differs from exact candidate: ' + relative)
             compared.append(relative)
-        require('app/transcript_export.py' in compared and 'update_bootstrap.py' in compared,
-                'Complete upgrade omitted new export module or stable bootstrap')
+        require('app/transcript_export.py' in compared and 'app/roundtable_workspace.py' in compared and 'update_bootstrap.py' in compared,
+                'Complete upgrade omitted mandatory export/workspace module or stable bootstrap')
         for skill_name, expected_files in (('external-ai-team', 9), ('agy-console', 2)):
             names = [p for p in (installed / 'skills' / skill_name).rglob('*') if p.is_file()]
             require(len(names) == expected_files, 'Installed Skill closure differs: ' + skill_name)

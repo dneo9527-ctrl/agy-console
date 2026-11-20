@@ -15,6 +15,7 @@ from collaboration_review import validate_review
 from quota_failover import clean_order, clean_fallback
 from model_policy import clean_global_model_policy
 from software_updates import SoftwareUpdates
+from roundtable_workspace import validate_workspace_preferences
 from multi_ai_collaboration import canonical as collaboration_policy, portable as portable_collaboration, validate as validate_collaboration, portable_roundtable, validate_roundtable, validate_roundtable_messages, validate_meetings
 
 MAX_UPLOAD = 64 * 1024 * 1024
@@ -35,6 +36,9 @@ def configuration_document(state, updates, ui, window=None, app_version=''):
         if window.get('codex_thread_id'):
             window_settings['multi_ai_collaboration'] = portable_collaboration(window)
             window_settings['roundtable'] = portable_roundtable(window)
+            if 'roundtable_workspace_preferences' in window:
+                preferences = validate_workspace_preferences(window['roundtable_workspace_preferences'], window['codex_thread_id'])
+                window_settings['roundtable_workspace_preferences'] = {key: val for key, val in preferences.items() if key != 'codex_thread_id'}
             value = collaboration_policy(window)
             window_settings['gpt_collaboration'] = value['enabled'] and value['providers']['agy']['enabled']
     return validate_configuration({'format': 'agy-console-settings', 'schema': 1,
@@ -70,11 +74,13 @@ def validate_configuration(value):
     SoftwareUpdates.validate_preferences(settings['updates'])
     window=settings['window']
     if window is not None:
-        obj(window, ('model_preferences','fallback_preferences','gpt_collaboration','auto_open_activity','multi_ai_collaboration','roundtable'))
+        obj(window, ('model_preferences','fallback_preferences','gpt_collaboration','auto_open_activity','multi_ai_collaboration','roundtable','roundtable_workspace_preferences'))
         if 'multi_ai_collaboration' in window:
             validate_collaboration(window['multi_ai_collaboration'], portable=True)
         if 'roundtable' in window:
             validate_roundtable(window['roundtable'], portable=True)
+        if 'roundtable_workspace_preferences' in window:
+            validate_workspace_preferences(window['roundtable_workspace_preferences'], None, portable=True)
         for key in ('model_preferences','fallback_preferences'):
             obj(window.get(key,{}), ('text','image'))
         for selected in window.get('model_preferences',{}).values():
@@ -147,6 +153,10 @@ def validate_state(value):
             if not thread:
                 raise ValueError('圆桌主持必须属于固定 Codex 聊天。')
             validate_roundtable(conv['roundtable'], thread)
+        if 'roundtable_workspace_preferences' in conv:
+            if not thread:
+                raise ValueError('圆桌预设必须属于固定 Codex 聊天。')
+            validate_workspace_preferences(conv['roundtable_workspace_preferences'], thread)
         branches = conv.get('branches')
         if not isinstance(branches, dict) or len(branches) > 16:
             raise ValueError('备份中的工作会话无效。')

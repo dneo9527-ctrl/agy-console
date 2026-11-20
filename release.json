@@ -2,7 +2,7 @@
   "authorization_reference": "Existing human-approved public MIT Agy and matching Skill full GitHub distribution; final publisher CI/installer/download gates remain mandatory.",
   "automatic_cross_web_roundtable": false,
   "channel": "preview",
-  "initial_upgrade": "full_package_required_from_preview16_or_earlier",
+  "initial_upgrade": "full_package_required_from_all_earlier_versions",
   "license": "MIT",
   "platform_verification": {
     "linux-x64": "pending_final_commit_ci_and_native_acceptance",
@@ -21,9 +21,9 @@
   "repository": "dneo9527-ctrl/agy-console",
   "schema_version": 1,
   "source_frozen": true,
-  "source_manifest_sha256": "596903a83e8845f19988e385deed3ec877d0d038d4bc640c1e7ac1bb2e7c2e17",
+  "source_manifest_sha256": "f006e8284f9b6441beb85c5228ba0dfe5aac53635675642272257bbbf9a87df0",
   "status": "ready",
   "updater_contract": "agreed",
-  "version": "0.1.0-preview.23",
+  "version": "0.1.0-preview.24",
   "visibility": "public"
 }

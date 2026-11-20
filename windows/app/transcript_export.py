@@ -166,6 +166,29 @@ def export_markdown(conv, branch=None, meeting_id=None, codex_thread_id=None, or
                   '工作会话：' + lane_name + ' · 会议：' + meeting['id'],
                   '主持：' + PROVIDERS[meeting['host']] + ' | 参与：' + '、'.join(PROVIDERS[p] for p in meeting['participants']),
                   '时间：' + meeting['created_at'] + ' | 状态：' + _status(meeting['status']), '']
+        preset = meeting.get('workspace', {}).get('preset')
+        if preset:
+            header += ['本场预设：' + inline(preset['label']), '']
+        decisions = meeting.get('decisions', {})
+        if decisions.get('status') == 'recorded':
+            header += ['### 主持建议纪要', '', '以下是主持建议，不代表用户批准或全员共识。', '']
+            for key, label in (('suggested_adoption', '建议采用'), ('disagreements', '分歧'),
+                               ('needs_verification', '待验证'), ('next_steps', '下一步')):
+                header += ['#### ' + label, '']
+                items = decisions.get(key, [])
+                if not items:
+                    header += ['（未记录条目）', '']
+                for item in items:
+                    header += [_literal(item['text']), '']
+                    for source in item['sources']:
+                        identity = (PROVIDERS[source['provider']] + ' · ' + STAGES[source['stage']]
+                                    + ' · ' + _status(source['status']) + ' · ' + source['source_id'])
+                        header += ['来源：' + inline(identity)]
+                        if source.get('turn_id'):
+                            header += ['CLI 任务：' + source['turn_id']]
+                        if source.get('source_url'):
+                            header += ['原会话：' + source['source_url']]
+                    header.append('')
         add(meeting['created_at'], '\n'.join(header))
         for slot in meeting['slots']:
             if slot.get('turn_id'):

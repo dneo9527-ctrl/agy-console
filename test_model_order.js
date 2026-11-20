@@ -16,5 +16,5 @@ assert.deepEqual(Array.from(ctx.cleanModelOrder(['',models[0].id,models[0].id,'<
 const node={value:models[1].id,dataset:{},innerHTML:''};Object.assign(ctx,{preferredModel:models[1].id,modelChoiceApplied:false,modelSaving:false,lastServerModelStamp:null,escape:String,$:()=>node});
 ctx.snapshot.service={features:{global_model:true}};ctx.snapshot.preferred_model=models[1].id;ctx.snapshot.preferred_model_updated_at='saved';ctx.uiSettings.modelOrder=[models[2].id,models[1].id,models[0].id];
 vm.runInContext(between('function renderModelSelection','async function persistModelChoice'),ctx);ctx.renderModelSelection({models},{});
-assert.equal(node.value,models[1].id);assert.ok(node.innerHTML.startsWith('<option value="">智能选择（按额度）</option>'));assert.ok(node.innerHTML.indexOf(models[2].id)<node.innerHTML.indexOf(models[1].id));
+assert.equal(node.value,models[1].id);assert.ok(node.innerHTML.startsWith('<option value="">全局智能选择</option>'));assert.equal((node.innerHTML.match(/全局智能选择/g)||[]).length,1,'one canonical automatic entry');assert.doesNotMatch(node.innerHTML,/沿用全局|智能选择（按额度）/);assert.ok(node.innerHTML.indexOf(models[2].id)<node.innerHTML.indexOf(models[1].id));
 console.log('Model-order checks passed: persisted order, stable input list, saved selection retained, smart option pinned, limits and boundaries, other preferences preserved.');

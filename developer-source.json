@@ -1,17 +1,19 @@
 {
-  "version": "0.1.0-preview.23",
+  "version": "0.1.0-preview.24",
   "status": "publisher_integrated_candidate",
-  "public_baseline_commit": "0c403a356b6391ec98a32582a58522601642313b",
-  "source_files": 233,
-  "developer_delta_paths": 30,
+  "public_baseline_commit": "a3a573621465e5b779678008e904f733ae399297",
+  "source_files": 240,
+  "developer_delta_paths": 23,
   "publisher_runtime_changes": false,
-  "matching_external_skill": "0.1.0-preview.6",
+  "matching_external_skill": "0.1.0-preview.7",
   "external_skill_files": 9,
   "private_local_adapter": false,
-  "initial_upgrade": "full_package_required_from_preview16_or_earlier",
+  "initial_upgrade": "full_package_required_from_all_earlier_versions",
   "publication_requires": "Exact-commit CI, two public-baseline native installer lifecycles, complete packages, paired Skill and verified downloads",
   "original_preview22_handoff_sha256": "6b0ef5e8c53e13c0d3be09ad06d48f981468d7162f1b97173c243b18c7dec048",
   "original_preview23_manifest_sha256": "9d75231dd31ac1014b98781cdb8ae5ec782d584cb40f17c1a826001d3881d4cf",
   "preview23_patch_sha256": "2c1d0ef7ae49b2bbe04bd574a7ac29a7b8d6f49fae43ee70b34e17f4f76d7f12",
-  "delta_basis": "preview.23 on exact frozen preview.22; cumulative changes on public preview.16"
+  "delta_basis": "Frozen local23 developer snapshot verified per-file; scoped three-way merge onto exact public23",
+  "original_preview24_handoff_sha256": "f22619d2499fdc18e1dc2e85a8402e3e655d1f396155fe8c3b696f563b26a1f8",
+  "publisher_platform_and_fixture_fixes_preserved": true
 }
