@@ -23,6 +23,10 @@ def findings(data, label):
         data = data.replace(b'http://' + b'example-user:example-password@127.0.0.1:9000', b'EXPLICIT_SYNTHETIC_FIXTURE')
     if label.endswith('test_software_updates.py'):
         data = data.replace(b'https://' + b'u:p@github.com/x', b'EXPLICIT_SYNTHETIC_REJECTION_FIXTURE')
+    if label.endswith('test_markdown_fluency.js'):
+        # Exact fabricated basename-rendering fixtures; arbitrary home paths still fail.
+        data = data.replace(b'/Users/' + b'local/output.png', b'EXPLICIT_SYNTHETIC_IMAGE_FIXTURE')
+        data = data.replace(b'file:///Users/' + b'local/hello%20world.PNG?download=1#view', b'EXPLICIT_SYNTHETIC_IMAGE_FIXTURE')
     return [{'file': label, 'rule': name} for name, rule in RULES.items() if rule.search(data)]
 
 

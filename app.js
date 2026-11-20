@@ -636,15 +636,88 @@ async function syncReturnedAccount(){
 function toast(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,3200);}
 async function api(path,body){const isState=path.split('?')[0]==='/api/state'&&body===undefined,options=body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Console-Token':token},body:JSON.stringify(body)};if(isState&&stateETag)options.headers={'If-None-Match':stateETag};const res=await fetch(path,options);if(isState&&res.status===304)return null;const data=await res.json();if(!res.ok)throw Object.assign(new Error(data.error||'请求失败'),{status:res.status});if(isState)stateETag=res.headers.get('ETag');return data;}
 function localImageBasename(value){
-  let path=String(value).trim().replace(/^<|>$/g,'');
+  let path=String(value).trim();
+  if(path.startsWith('<'))path=path.slice(1);if(path.endsWith('>'))path=path.slice(0,-1);
   try{path=decodeURIComponent(path);}catch(e){}
-  if(!/^(?:file:\/\/|\/|~\/|[a-z]:[\\/])/i.test(path)||! /\.(?:png|jpe?g|webp|gif|avif|bmp)(?:[?#].*)?$/i.test(path))return null;
-  return path.split(/[?#]/)[0].split(/[\\/]/).at(-1)||'生成图片';
+  if(!/^(?:file:\/\/|\/|~\/|[a-z]:[\\/])/i.test(path))return null;
+  const query=path.indexOf('?'),fragment=path.indexOf('#');
+  path=path.slice(0,Math.min(query<0?path.length:query,fragment<0?path.length:fragment));
+  const extension=path.slice(path.lastIndexOf('.')+1).toLowerCase();
+  if(!['png','jpg','jpeg','webp','gif','avif','bmp'].includes(extension))return null;
+  return path.slice(Math.max(path.lastIndexOf('/'),path.lastIndexOf('\\'))+1)||'生成图片';
 }
-function imageReferenceText(text){
-  return String(text).replace(/`([^`]+)`/g,(whole,path)=>{const name=localImageBasename(path);return name?'`'+name+'`':whole;}).replace(/\[([^\]]*)\]\(([^)\n]+)\)/g,(whole,label,target)=>{const name=localImageBasename(target);return name?(localImageBasename(label)||label||name):whole;});
+function formatInlineText(value,html,links=true,strong=true){
+  const text=String(value),length=text.length,output=[];
+  let index=0,start=0,labelEnd=-1,newlineEnd=-1,parenthesisEnds=null;
+  const plain=part=>html?escape(part):part;
+  const emit=(content,end)=>{if(index>start)output.push(plain(text.slice(start,index)));output.push(content);index=end;start=end;};
+  // Each delimiter cursor advances only forwards. A matching-parenthesis table also
+  // bounds failed/nested link lookups without rescanning a shared suffix.
+  const closingParenthesis=open=>{
+    if(!parenthesisEnds){
+      parenthesisEnds=new Int32Array(length);const stack=[];
+      for(let cursor=0;cursor<length;cursor++){
+        if(text[cursor]==='(')stack.push(cursor);
+        else if(text[cursor]===')'&&stack.length)parenthesisEnds[stack.pop()]=cursor+1;
+      }
+    }
+    return parenthesisEnds[open]-1;
+  };
+  const strongEnd=from=>{
+    let closingLabel=-1,lineBreak=-1;
+    for(let cursor=from;cursor<length;cursor++){
+      if(text[cursor]==='`'){
+        const end=text.indexOf('`',cursor+1);
+        if(end>cursor+1){cursor=end;continue;}
+      }
+      if(links&&text[cursor]==='['){
+        if(closingLabel<cursor+1){closingLabel=text.indexOf(']',cursor+1);if(closingLabel<0)closingLabel=length;}
+        if(closingLabel<length&&text[closingLabel+1]==='('){
+          const targetStart=closingLabel+2,end=closingParenthesis(closingLabel+1);
+          if(lineBreak<targetStart){lineBreak=text.indexOf('\n',targetStart);if(lineBreak<0)lineBreak=length;}
+          if(end>targetStart&&end<lineBreak){cursor=end;continue;}
+        }
+      }
+      if(text[cursor]==='*')return cursor>from&&text[cursor+1]==='*'?cursor:-1;
+    }
+    return -1;
+  };
+  while(index<length){
+    if(text[index]==='`'){
+      const end=text.indexOf('`',index+1);
+      if(end>index+1){const body=text.slice(index+1,end),name=localImageBasename(body);emit(html?`<code>${escape(name||body)}</code>`:'`'+(name||body)+'`',end+1);continue;}
+    }
+    if(html&&strong&&text[index]==='*'&&text[index+1]==='*'){
+      const end=strongEnd(index+2);
+      if(end>=0){emit('<strong>'+formatInlineText(text.slice(index+2,end),true,links,false)+'</strong>',end+2);continue;}
+    }
+    const image=html&&links&&text[index]==='!'&&text[index+1]==='[',open=image?index+1:index;
+    if(links&&text[open]==='['){
+      if(labelEnd<open+1){labelEnd=text.indexOf(']',open+1);if(labelEnd<0)labelEnd=length;}
+      if(labelEnd<length&&text[labelEnd+1]==='('){
+        const targetStart=labelEnd+2,end=closingParenthesis(labelEnd+1);
+        if(newlineEnd<targetStart){newlineEnd=text.indexOf('\n',targetStart);if(newlineEnd<0)newlineEnd=length;}
+        if(end>targetStart&&end<newlineEnd){
+          const label=text.slice(open+1,labelEnd),target=text.slice(targetStart,end);
+          if(image){emit(label?'[图片：'+formatInlineText(label,true,false,strong)+']':'[图片]',end+1);continue;}
+          const name=localImageBasename(target);
+          if(name){emit(formatInlineText(localImageBasename(label)||label||name,html,false,strong),end+1);continue;}
+          if(html&&label&&/^https?:\/\/[^\s\u0000-\u001f\u007f]+$/i.test(target)){
+            emit(`<a href="${escape(target)}" target="_blank" rel="noopener noreferrer">${formatInlineText(label,true,false,strong)}</a>`,end+1);continue;
+          }
+          // Unsupported destinations stay literal and consume their complete span.
+          // Re-parsing their suffix could both alter text and reintroduce quadratic work.
+          emit(plain(text.slice(index,end+1)),end+1);continue;
+        }
+      }
+    }
+    index++;
+  }
+  if(start<length)output.push(plain(text.slice(start)));
+  return output.join('');
 }
-function inline(text){return escape(imageReferenceText(text)).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');}
+function imageReferenceText(text){return formatInlineText(text,false);}
+function inline(text){return formatInlineText(text,true);}
 function turnImages(turn){
   if(!/^[a-f0-9]{32}$/.test(turn.id)||!Array.isArray(turn.images))return [];
   return turn.images.filter(item=>item&&/^[a-f0-9]{16,64}$/.test(item.id)&&item.url===`/api/turns/${turn.id}/images/${item.id}`&&item.download_url===`${item.url}?download=1`&&/^image\/(?:png|jpeg|webp|gif|avif|bmp)$/.test(item.mime));
@@ -667,12 +740,11 @@ function markdown(source,key){
   const closeList=()=>{if(list){output+=`</${list}>`;list=null;}};
   for(let i=0;i<lines.length;i++){
     let line=lines[i];
-    if(/^\s*```/.test(line)){closeList();let language=line.replace(/^\s*```/,'').trim(),code=[];while(++i<lines.length&&!/^\s*```/.test(lines[i]))code.push(lines[i]);let cid=`${key}-${i}`;codeCopies.set(cid,code.join('\n'));output+=`<div class="code-block"><div class="code-header"><span>${escape(language||'代码')}</span><button type="button" data-code="${cid}">复制代码</button></div><pre><code>${escape(code.join('\n'))}</code></pre></div>`;continue;}
-    line=line.replace(/!\[([^\]]*)\]\([^)]+\)/g,(_,alt)=>alt?`[图片：${alt}]`:'[图片]');
+    if(/^\s*```/.test(line)){closeList();let language=line.replace(/^\s*```/,'').trim(),code=[];while(++i<lines.length&&!/^\s*```/.test(lines[i]))code.push(lines[i]);let cid=`${key}-${i}`;codeCopies.set(cid,code.join('\n'));output+=`<div class="code-block"><div class="code-header"><span>${escape(language||'代码')}</span><button type="button" data-code="${escape(cid)}">复制代码</button></div><pre><code>${escape(code.join('\n'))}</code></pre></div>`;continue;}
     if(!line.trim()){closeList();continue;}
     if(/^\s*([-*_])\1{2,}\s*$/.test(line)){closeList();output+='<hr>';continue;}
     const heading=line.match(/^(#{1,6})\s+(.*)/);if(heading){closeList();let level=Math.min(heading[1].length+1,4);output+=`<h${level}>${inline(heading[2])}</h${level}>`;continue;}
-    if(line.includes('|')&&i+1<lines.length&&/^\s*\|?\s*:?-{3,}/.test(lines[i+1])){closeList();const cells=s=>s.trim().replace(/^\||\|$/g,'').split('|');output+='<table><thead><tr>'+cells(line).map(c=>`<th>${inline(c.trim())}</th>`).join('')+'</tr></thead><tbody>';i++;while(i+1<lines.length&&lines[i+1].includes('|')){i++;output+='<tr>'+cells(lines[i]).map(c=>`<td>${inline(c.trim())}</td>`).join('')+'</tr>';}output+='</tbody></table>';continue;}
+    if(line.includes('|')&&i+1<lines.length&&/^\s*(?:\|\s*)?:?-{3,}/.test(lines[i+1])){closeList();const cells=s=>s.trim().replace(/^\||\|$/g,'').split('|');output+='<table><thead><tr>'+cells(line).map(c=>`<th>${inline(c.trim())}</th>`).join('')+'</tr></thead><tbody>';i++;while(i+1<lines.length&&lines[i+1].includes('|')){i++;output+='<tr>'+cells(lines[i]).map(c=>`<td>${inline(c.trim())}</td>`).join('')+'</tr>';}output+='</tbody></table>';continue;}
     const item=line.match(/^\s*(?:([-*])|(\d+)[.)])\s+(.*)/);if(item){let kind=item[2]?'ol':'ul';if(list!==kind){closeList();output+=`<${kind}>`;list=kind;}output+=`<li>${inline(item[3])}</li>`;continue;}
     closeList();output+=`<p>${inline(line)}</p>`;
   }closeList();return output;

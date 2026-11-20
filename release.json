@@ -21,9 +21,9 @@
   "repository": "dneo9527-ctrl/agy-console",
   "schema_version": 1,
   "source_frozen": true,
-  "source_manifest_sha256": "f006e8284f9b6441beb85c5228ba0dfe5aac53635675642272257bbbf9a87df0",
+  "source_manifest_sha256": "fa7012e4f92499fce56ffe1d5a958dac635b4f2a2133e13c23019f25f4a21536",
   "status": "ready",
   "updater_contract": "agreed",
-  "version": "0.1.0-preview.24",
+  "version": "0.1.0-preview.25",
   "visibility": "public"
 }

@@ -35,7 +35,7 @@ from panel_backups import PanelBackups, MAX_UPLOAD, configuration_document, vali
 from proxy_env import configure_proxy
 from headless_compat import TurnEvidence
 from model_policy import default_model, candidate_models, model_family, quota_groups, quota_empty, effective_order, select_turn_model, window_model_resolution, model_selection_settings, clean_global_model_policy
-from quota_failover import clean_order, clean_fallback, quota_rejection, AttemptGuard
+from quota_failover import clean_order, clean_fallback, quota_rejection, context_rejection, AttemptGuard
 from task_queue import TaskQueue
 from task_progress import record as record_progress, step_progress, finish_progress
 from collaboration_review import validate_review
@@ -2193,6 +2193,10 @@ class Console:
                         else:
                             notice = '未取得原会话安全续接的完整证据，未自动重跑；请核对结果后恢复任务。'
                         turn['fallback_notice'] = notice
+                    elif turn['status'] == 'failed' and context_rejection(turn.get('error')):
+                        turn['failure_kind'] = 'context_length'
+                        turn['fallback_notice'] = ('上下文过长，未自动切换模型或新建会话。原记录已保留；'
+                                                   '可缩短本次任务，或在设置中手动整理上下文后再发。')
                     if retry_item is None:
                         finish_progress(turn)
                         attempts = turn.get('attempts', [])

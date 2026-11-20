@@ -21,10 +21,49 @@ def clean_fallback(value):
     return result
 
 
+def rate_rejection(error):
+    """Explicit throughput limits do not prove model quota depletion."""
+    if not isinstance(error, str):
+        return False
+    lower = error.lower()
+    return any(marker in lower for marker in (
+        'rate limit', 'rate_limit', 'tokens-per-minute', 'tokens per minute',
+        'requests per minute', 'tokens per second', 'tokens-per-second',
+        'tokens per day', 'tokens-per-day', 'number of tokens per minute',
+    ))
+
+
+def context_rejection(error):
+    """Recognize explicit input overflow before considering quota recovery.
+
+    RESOURCE_EXHAUSTED and generic token limits alone are ambiguous. A mixed
+    diagnostic cannot justify replaying the same oversized input on another
+    model, or marking that model's quota as depleted.
+    """
+    if not isinstance(error, str):
+        return False
+    lower = error.lower()
+    markers = (
+        'context_length_exceeded', 'context_window_exceeded', 'prompt_too_long',
+        'maximum context length', 'context window exceeded',
+        'exceeds the context window', 'exceeds the maximum context',
+        'prompt is too long', 'input is too long',
+        'context length exceeds', 'context length exceeded',
+        '上下文过长', '上下文超长', '上下文长度超过', '输入过长',
+    )
+    if any(marker in lower for marker in markers):
+        return True
+    # A per-minute allowance is not a per-request context-window limit.
+    return not rate_rejection(error) and any(marker in lower for marker in (
+        'input token count exceeds', 'input tokens exceed',
+        'exceeds the maximum number of tokens', 'too many input tokens',
+    ))
+
+
 def quota_rejection(error):
     # A generic 429/RESOURCE_EXHAUSTED can mean request rate or concurrency.
     # Only explicit quota depletion is eligible; transport failures never are.
-    return isinstance(error, str) and bool(re.search(
+    return isinstance(error, str) and not context_rejection(error) and not rate_rejection(error) and bool(re.search(
         r'\bIndividual quota reached\b|\bquota (?:has been )?(?:exhausted|exceeded|depleted)\b|'
         r'\b(?:insufficient|exhausted) (?:model )?quota\b', error, re.I)) and not bool(re.search(
         r'timeout|timed out|503|connection|context deadline|historical', error, re.I))

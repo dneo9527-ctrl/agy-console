@@ -29,3 +29,7 @@ Windows 在原输入限制之外，提交前核对包含冻结材料的实际 pr
 公开 .23 基线保留发行端 Windows 假 CLI／updater 测试修正。23 项开发增量逐项合并，新增 roundtable_workspace.py，完整源码 240 文件。开发方 501 Python、40 JS、真实 7/7 圆桌及五主题／草稿／来源跳转／导出实页证据与发行测试分开记录。新工作区、预设、结构化主持建议和精确来源回归加入原生 Windows 契约套件；旧会议不回填，主持建议不是用户批准。
 
 所有旧版本升级 .24 均使用完整包。原生 CI 分别从公开 .23、.16 和 .8 完整安装器升级，核对新必需模块、数据保留、互斥及卸载；最终结果见 Release 附件。无 program-only 或更新 feed。材料折叠／精确去重不代表官方历史压缩或计费 token 节省；网页未知用量单列。
+
+## preview.25 输出与材料
+
+10 项冻结增量在准确公开 .24 上按平台合入；新增 Markdown 测试和两项 Python 上下文/摘录测试明确进入名单。开发者 516 Python/41 JS 与本机 UI 证据另列；实际圆桌 partial 5/7，两次 Agy 无正文失败，不作一致结论。发行方原生 Windows 继续完整 prompt UTF-16 边界检查，并从公开 .24/.23/.16/.8 安装器验证升级。最终准确提交结果见本版 Actions 与 PLATFORM-VERIFICATION.json。Skill .7 未改并随完整包携带；不发布 program-only/feed。

@@ -1,14 +1,14 @@
-> **preview.23 及更早须使用完整 setup 或完整便携包升级到 preview.24；保留原 data，先关闭工具。禁止使用 program-only ZIP 或更新 feed 代替。**
+> **preview.24 及更早须使用完整 setup 或完整便携包升级到 preview.25；保留原 data，先关闭工具。禁止使用 program-only ZIP 或更新 feed 代替。**
 
 # Agy 控制台 · Windows x64
 
-Windows 安装版版本：0.1.0-preview.8（2026-11-17）。Windows 10 1809+/11 x64 目标；含 Python 3.13.17、pywinpty、psutil，无需另外安装 Python。每用户免管理员安装，不创建后台服务或开机启动。本版不提供 32 位或 ARM64 原生运行时。
+Windows 安装版版本：0.1.0-preview.25（2026-11-20）。Windows 10 1809+/11 x64 目标；含 Python 3.13.17、pywinpty、psutil，无需另外安装 Python。每用户免管理员安装，不创建后台服务或开机启动。本版不提供 32 位或 ARM64 原生运行时。
 
 ## 下载与首次使用
 
-- `AgyConsole-0.1.0-preview.8-windows-x64-setup.exe`：普通用户的安装向导；桌面和开始菜单入口，默认安装在 `%LOCALAPPDATA%\Programs\AgyConsole`。
-- `AgyConsole-0.1.0-preview.8-windows-x64-preview.zip`：完整便携版；完全解压到自己的可写目录，不从 ZIP 内运行。
-- `.8` 保留 `.7` 的原生启动器和安装器布局，只提供完整安装/便携包和可重建源码；共享更新清单不提供 Windows 程序更新条目。已有便携版需先关闭，再下载完整包；不要用旧程序更新机制代替安装器升级。
+- `AgyConsole-0.1.0-preview.25-windows-x64-setup.exe`：普通用户的安装向导；桌面和开始菜单入口，默认安装在 `%LOCALAPPDATA%\Programs\AgyConsole`。
+- `AgyConsole-0.1.0-preview.25-windows-x64-preview.zip`：完整便携版；完全解压到自己的可写目录，不从 ZIP 内运行。
+- 本版保留公开 `.24` 的原生启动器和安装器布局，只提供完整安装/便携包和可重建源码；共享更新清单不提供 Windows 程序更新条目。已有便携版需先关闭，再下载完整包；不要用旧程序更新机制代替安装器升级。
 
 安装后阅读 **Getting Started**，开始菜单提供 **Official CLI Installation**、**Official CLI Login**、**Agy Console**、**Open Panel**。便携目录也有对应的 `Install-Official-CLI.url`、`Login-Agy.cmd`、`Start-Agy.cmd`、`Open-Panel.url`。
 
@@ -73,9 +73,9 @@ PAC 自动配置、远端代理和带账号密码的代理不会被自动搬进 
 
 ## 验证范围
 
-最终准确提交在 Windows 原生 CI 验证管道、ConPTY、Job、UTF-8 及会议、同步、全局模型、导出契约，并编译真实 EXE。真实公开 .16 和 .8 安装器分别升级至本版，检查完整源码/新 bootstrap/新模块/九文件 Skill、含空格路径、数据保留、运行维护互斥与卸载；结果见准确提交 Actions 与 Release 附件 PLATFORM-VERIFICATION.json。
+最终准确提交在 Windows 原生 CI 验证管道、ConPTY、Job、UTF-8 及会议、同步、全局模型、导出契约，并编译真实 EXE。真实公开 .24、.23、.16 和 .8 安装器分别升级至本版，检查完整源码/新 bootstrap/新模块/九文件 Skill、含空格路径、数据保留、运行维护互斥与卸载；结果见准确提交 Actions 与 Release 附件 PLATFORM-VERIFICATION.json。
 
-这些隔离检查不登录账号或调用真实模型，不代表旧 Windows、Defender、SmartScreen、睡眠唤醒或全新硬件已验收。单次输入仍限约 26000 个 UTF-16 字符。发布者未附 Windows 代码签名。
+这些隔离检查不登录账号或调用真实模型，不代表旧 Windows、Defender、SmartScreen、睡眠唤醒或全新硬件已验收。原始输入及包含冻结材料的完整 prompt 分别限制为 26000 个 UTF-16 单元；验证后入队使用同一冻结快照。发布者未附 Windows 代码签名。
 
 ## 来源与文件
 
@@ -98,3 +98,10 @@ PAC 自动配置、远端代理和带账号密码的代理不会被自动搬进 
 0.1.0-preview.6：宽屏和窄屏均保留菜单按钮，可收起侧栏扩大聊天空间。
 
 发布源已配置为 https://github.com/dneo9527-ctrl/agy-console ，通道 preview，自动下载默认关闭。自有源码采用 MIT（包内 LICENSE），第三方许可独立保留。发布端另修复回环绑定的反向 DNS 等待。
+
+## .25：输出、材料和上下文错误
+
+- Markdown 使用有界前向扫描，行内代码保持字面内容，HTTP(S) 链接支持成对括号并继续转义 HTML；保留图片、表格和代码复制行为。
+- 圆桌长材料除首尾外最多保留四处关键原文摘录，标记原始行号、字符位置与省略数量；短材料剩余份额公平分配，完整双层 JSON 仍限 12,000 字符。已冻结旧输入和候补快照保持不变。
+- 明确上下文超长时保留失败、原始错误及原会话，不自动换模型或新建会话；明确额度耗尽与速率限制保守区分，未知格式保留原提示。
+- 摘录不保证保留全部证据，字符预算不清除官方历史，也不能证明 token 节省。配套 external-ai-team 仍为未修改的 preview.7，须显式安装。

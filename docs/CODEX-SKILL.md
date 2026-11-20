@@ -30,7 +30,7 @@ python3 scripts/install_codex_skill.py --codex-home /path/to/codex-home
 
 Skill 固定连接到安装时选择的面板目录与 Python。移动面板、更换运行时或更新 Skill 后，重新运行安装器刷新连接。只替换带本工具安装标记的同名 Skill，旧副本保留为备份；遇到其他来源的同名 Skill 或链接目录会停止。
 
-Release 中的 `AgyConsole-0.1.0-preview.24-codex-skill.zip` 适合已有兼容面板的用户。完整解压后，将下面命令的路径换成现有面板目录；不要直接把模板复制进 Codex 的 skills 目录：
+Release 中的 `AgyConsole-0.1.0-preview.25-codex-skill.zip` 适合已有兼容面板的用户。完整解压后，将下面命令的路径换成现有面板目录；不要直接把模板复制进 Codex 的 skills 目录：
 
 ```sh
 python3 scripts/install_codex_skill.py --console-root /path/to/AgyConsole --enable-default

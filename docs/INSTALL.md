@@ -1,8 +1,8 @@
-> **升级门槛：preview.23 及更早 → preview.24 必须先使用完整包。** 旧稳定 bootstrap 不接受新模块 `transcript_export.py`，且普通程序包不会更新 bootstrap。关闭原工具、保留数据后完整升级；本版不发布 program ZIP 或 updates feed。
+> **升级门槛：preview.24 及更早 → preview.25 必须先使用完整包。** 旧稳定 bootstrap 不接受新模块 `transcript_export.py`，且普通程序包不会更新 bootstrap。关闭原工具、保留数据后完整升级；本版不发布 program ZIP 或 updates feed。
 
 # 安装、备份与更新
 
-## preview.23 及更早升级到 preview.24
+## preview.24 及更早升级到 preview.25
 
 本版新增运行模块，必须使用完整安装／源码包；旧 .16 及更早的 program-only 更新白名单无法接受本次模块。默认不提供 program.zip 或自动更新清单，不能用旧更新器代替完整升级。
 

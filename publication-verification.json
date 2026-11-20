@@ -1,10 +1,11 @@
 {
-  "version": "0.1.0-preview.24",
+  "version": "0.1.0-preview.25",
   "stage": "publisher_candidate",
   "developer_reported": {
-    "python": 501,
-    "javascript_groups": 40,
-    "mac_live_roundtable": "7/7; separate developer evidence"
+    "python": 516,
+    "javascript_groups": 41,
+    "mac_live_roundtable": "partial5/7; both Agy attempts failed without text",
+    "local_browser": "same foreground process reload, frozen input and source navigation; separate developer evidence"
   },
   "publication_validation": "Final exact-commit Actions, Release and PLATFORM-VERIFICATION.json record actual performed checks",
   "not_verified": [
