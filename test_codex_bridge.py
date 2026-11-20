@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from bridge import Client
 from server import BUSY, Console, DEFAULT_MODEL, Handler, ThreadingHTTPServer
 from test_server import FAKE
@@ -21,6 +22,22 @@ class BindingTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.root = Path(self.temp.name)
         self.binary = self.root/'fake-agy'; self.binary.write_text(FAKE); self.binary.chmod(0o700)
+        # These contracts exercise bindings and the worker, not public update
+        # discovery. Keep unrelated network workers out of the temporary profile.
+        updates = patch('server.SoftwareUpdates.start')
+        updates.start()
+        self.addCleanup(updates.stop)
+        if os.name == 'nt':
+            # Windows cannot execute a shebang fixture. Use the real interpreter
+            # for this exact fake file while retaining native pipes and cleanup.
+            original_popen = subprocess.Popen
+            def launch_fixture(command, *args, **kwargs):
+                if isinstance(command, (list, tuple)) and command and str(command[0]) == str(self.binary):
+                    command = [sys.executable, str(self.binary), *command[1:]]
+                return original_popen(command, *args, **kwargs)
+            fake_cli = patch('subprocess.Popen', side_effect=launch_fixture)
+            fake_cli.start()
+            self.addCleanup(fake_cli.stop)
         self.app = Console(self.root/'data', self.binary, import_history=False,
                            account_reader=lambda *_a,**_kw:{'state':'unknown','email':None})
 

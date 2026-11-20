@@ -161,7 +161,7 @@ class GlobalModelPolicyTests(unittest.TestCase):
             result = subprocess.run([sys.executable, str(Path(__file__).with_name('bridge.py')), '--url',
                 'http://127.0.0.1:' + str(httpd.server_port), '--thread-id', binding.THREAD,
                 '--task-file', str(task), '--timeout', '8', '--out', str(self.root/'result')], capture_output=True, text=True, timeout=12)
-            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             self.assertEqual(json.loads(result.stdout.splitlines()[0])['model'], FLASH)
             self.assertEqual(json.loads((self.root/'result/result.json').read_text())['model'], FLASH)
         finally:

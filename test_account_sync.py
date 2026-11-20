@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 from server import Console, ConflictError, Handler, ThreadingHTTPServer
 
@@ -19,6 +20,11 @@ def identity(email='new@example.test'):
 class AccountSyncTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
+        # Account synchronization uses fake readers; updater networking is tested
+        # separately and must not race disposable profile cleanup on Windows.
+        updates = patch('server.SoftwareUpdates.start')
+        updates.start()
+        self.addCleanup(updates.stop)
         self.reads = []
         self.account = identity()
         def read(*args, **kwargs):
